@@ -13,8 +13,15 @@ tracker: bytetrack.yaml
 tracking:
   # Ignore tracks shorter than this many frames when choosing the 2 athletes.
   min_track_len: 10
-  # Ignore detections smaller than this fraction of the frame area (referee/audience far away, etc).
-  min_bbox_area_frac: 0.01
+  # Ignore detections smaller than this fraction of the frame area.
+  # Kept low deliberately: on real wide-shot kumite footage tested so far,
+  # YOLO never produced persistent tracks for background audience (too small/
+  # dense to detect at all), so this filter isn't doing anti-audience work -
+  # but set too high (0.01 was tried first) it silently excluded BOTH real
+  # athletes in a more zoomed-out clip while a seated corner coach's larger
+  # box passed. Athlete-vs-official selection relies on tatami calibration
+  # (below) and the persistence/size ranking, not this threshold.
+  min_bbox_area_frac: 0.002
 
 athlete_selection:
   # Max allowed distance (as a fraction of the frame diagonal) when re-associating
@@ -32,8 +39,11 @@ ground_point:
 movement:
   # Degrees of heading change to count as a "significant direction change".
   direction_change_angle_deg: 30
-  # Ignore direction changes below this speed (pixels/sec or m/s) - filters jitter.
+  # Ignore direction changes below this speed - filters jitter. Units differ
+  # by space: pixels/sec before calibration, m/s once calibrated (these are
+  # NOT the same number rescaled - tune each independently).
   min_move_speed_px: 40.0
+  min_move_speed_mps: 0.3
 
 calibration:
   tatami_width_m: 8.0

@@ -76,17 +76,21 @@ class AthleteSelector:
             and t.avg_area >= self.min_bbox_area
         ]
         if tatami_mask_fn is not None:
-            inside = [
+            # Once calibrated, always restrict to people standing inside the
+            # tatami - never fall back to the unfiltered set, even if that
+            # leaves 0 or 1 candidates this frame (e.g. one athlete briefly
+            # undetected). Falling back would let a stationary seated coach
+            # or judge get picked up again, exactly what calibration is meant
+            # to prevent.
+            candidates = [
                 t for t in candidates
                 if t.last_ground_point is not None and tatami_mask_fn(t.last_ground_point)
             ]
-            if len(inside) >= 2:
-                if len(inside) > 2:
-                    logger.info(
-                        "%d candidates inside tatami (expected 2) - referee is likely among them",
-                        len(inside),
-                    )
-                candidates = inside
+            if len(candidates) > 2:
+                logger.info(
+                    "%d candidates inside tatami (expected 2) - referee is likely among them",
+                    len(candidates),
+                )
         return candidates
 
     def select_two(self, frame_idx: int, tatami_mask_fn=None):
@@ -112,33 +116,41 @@ class AthleteSelector:
                 break
 
             last_point = self.athlete_last_point.get(athlete_id)
+            old_tracker_id = self.athlete_to_tracker[athlete_id]
+
             if last_point is not None:
                 unassigned_tracks.sort(
                     key=lambda t: _dist(t.last_ground_point, last_point)
                     if t.last_ground_point is not None else float("inf")
                 )
-            best = unassigned_tracks.pop(0)
+                best = unassigned_tracks[0]
+                dist = (
+                    _dist(best.last_ground_point, last_point)
+                    if best.last_ground_point is not None else None
+                )
+                if old_tracker_id is not None and dist is not None and dist > self.reassoc_max_dist:
+                    # Nearest candidate is still too far to trust - a confidently
+                    # wrong assignment (e.g. locking onto a seated coach) is worse
+                    # than leaving this athlete unassigned for a frame. Try again
+                    # next frame rather than force it.
+                    logger.warning(
+                        "frame %d: %s has no confident match (nearest candidate tracker %s at "
+                        "distance %.1f > max %.1f) - leaving unassigned this frame",
+                        frame_idx, athlete_id, best.tracker_id, dist, self.reassoc_max_dist,
+                    )
+                    continue
+                unassigned_tracks.remove(best)
+            else:
+                best = unassigned_tracks.pop(0)
 
-            old_tracker_id = self.athlete_to_tracker[athlete_id]
             self.athlete_to_tracker[athlete_id] = best.tracker_id
 
             if old_tracker_id is not None and old_tracker_id != best.tracker_id:
                 self.id_switch_count += 1
-                dist = (
-                    _dist(best.last_ground_point, last_point)
-                    if last_point is not None and best.last_ground_point is not None else None
+                logger.info(
+                    "frame %d: %s re-associated tracker %s -> %s",
+                    frame_idx, athlete_id, old_tracker_id, best.tracker_id,
                 )
-                if dist is not None and dist > self.reassoc_max_dist:
-                    logger.warning(
-                        "frame %d: %s re-associated tracker %s -> %s at distance %.1f "
-                        "(> max %.1f) - low confidence match",
-                        frame_idx, athlete_id, old_tracker_id, best.tracker_id, dist, self.reassoc_max_dist,
-                    )
-                else:
-                    logger.info(
-                        "frame %d: %s re-associated tracker %s -> %s",
-                        frame_idx, athlete_id, old_tracker_id, best.tracker_id,
-                    )
 
             self.reassociation_log.append({
                 "frame": frame_idx,

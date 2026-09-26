@@ -43,6 +43,7 @@ def compute_movement_stats(
 
     prev_point = None
     prev_t = None
+    prev_tracker_id = None
     prev_heading = None
     speeds = []
 
@@ -54,7 +55,13 @@ def compute_movement_stats(
         stats.frames_visible += 1
         stats.positions.append((r["timestamp"], point[0], point[1]))
 
-        if prev_point is not None:
+        # A tracker-ID change means the position link to the previous frame is
+        # not trustworthy (occlusion/re-association gap) - counting that jump
+        # as real movement produces spurious "teleport" speed spikes. Still
+        # record the position (above), just don't treat this step as motion.
+        tracker_changed = prev_tracker_id is not None and r["tracker_id"] != prev_tracker_id
+
+        if prev_point is not None and not tracker_changed:
             dt = r["timestamp"] - prev_t
             if dt > 0:
                 dist = math.dist(point, prev_point)
@@ -74,6 +81,7 @@ def compute_movement_stats(
 
         prev_point = point
         prev_t = r["timestamp"]
+        prev_tracker_id = r["tracker_id"]
 
     stats.avg_speed = sum(speeds) / len(speeds) if speeds else 0.0
     return stats

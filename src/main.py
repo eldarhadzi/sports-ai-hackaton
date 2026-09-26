@@ -13,7 +13,7 @@ import yaml
 
 from pose_tracker import PoseTracker, LEFT_ANKLE_IDX, RIGHT_ANKLE_IDX
 from athletes import AthleteSelector
-from calibration import calibrate_from_click, load_calibration
+from calibration import calibrate_from_click, load_calibration, save_calibration
 from analysis.karate import compute_movement_stats
 from visualization import draw_frame, render_heatmap
 from export import JsonlWriter, write_run_meta
@@ -56,7 +56,21 @@ def parse_args():
         "--calibrate", action="store_true",
         help="Run interactive tatami corner calibration on the first frame before processing.",
     )
+    parser.add_argument(
+        "--corners", default=None,
+        help=(
+            "Skip clicking: 'x1,y1,x2,y2,x3,y3,x4,y4' tatami corners in pixel "
+            "coordinates, order top-left,top-right,bottom-right,bottom-left."
+        ),
+    )
     return parser.parse_args()
+
+
+def parse_corners(spec: str) -> list[tuple[float, float]]:
+    values = [float(v) for v in spec.split(",")]
+    if len(values) != 8:
+        raise ValueError("--corners needs exactly 8 numbers: x1,y1,x2,y2,x3,y3,x4,y4")
+    return [(values[i], values[i + 1]) for i in range(0, 8, 2)]
 
 
 def make_tatami_mask_fn(calibration, tatami_width_m, tatami_height_m):
@@ -94,7 +108,12 @@ def main():
     calib_path = data_dir / "calibration" / f"{input_path.stem}.json"
     calibration = load_calibration(calib_path)
 
-    if args.calibrate or (calibration is None and calib_cfg.get("interactive_if_missing", False)):
+    if args.corners and calibration is None:
+        calibration = save_calibration(
+            parse_corners(args.corners), calib_path,
+            calib_cfg["tatami_width_m"], calib_cfg["tatami_height_m"],
+        )
+    elif args.calibrate or (calibration is None and calib_cfg.get("interactive_if_missing", False)):
         ok, first_frame = cap.read()
         if not ok:
             raise RuntimeError("Could not read first frame for calibration")
@@ -219,10 +238,14 @@ def main():
 
     stats_summary = {}
     for athlete_id in ("athlete_1", "athlete_2"):
+        min_move_speed = (
+            config["movement"]["min_move_speed_mps"] if calibration is not None
+            else config["movement"]["min_move_speed_px"]
+        )
         stats = compute_movement_stats(
             records, athlete_id, frame_idx,
             config["movement"]["direction_change_angle_deg"],
-            config["movement"]["min_move_speed_px"],
+            min_move_speed,
             use_tatami=calibration is not None,
         )
         stats_summary[athlete_id] = {
