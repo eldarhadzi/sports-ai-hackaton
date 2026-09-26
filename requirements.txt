@@ -1,0 +1,8 @@
+ultralytics>=8.3
+opencv-python>=4.10
+numpy>=1.26
+pandas>=2.2
+matplotlib>=3.9
+pyyaml>=6.0
+pytest>=8.0
+lap>=0.5.12
