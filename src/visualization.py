@@ -8,6 +8,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from athletes import AKA, AO
+
 logger = logging.getLogger(__name__)
 
 # COCO-17 skeleton edges (keypoint index pairs).
@@ -17,12 +19,13 @@ SKELETON_EDGES = [
     (11, 13), (13, 15), (12, 14), (14, 16),
 ]
 
-# BGR colors matching kumite belt convention: athlete_1 = aka (red), athlete_2 = ao (blue).
+# BGR colors matching kumite belt convention: AKA = red, AO = blue.
 ATHLETE_COLORS = {
-    "athlete_1": (0, 0, 255),
-    "athlete_2": (255, 0, 0),
+    AKA: (0, 0, 255),
+    AO: (255, 0, 0),
     None: (160, 160, 160),
 }
+SLOT_LABELS = {AKA: "AKA", AO: "AO"}
 
 KEYPOINT_CONF_THRESHOLD = 0.3
 
@@ -31,22 +34,24 @@ def draw_frame(frame, detections, selector, trails, viz_config) -> np.ndarray:
     annotated = frame.copy()
 
     for det in detections:
-        athlete_id = selector.tracker_to_athlete(det.tracker_id)
-        color = ATHLETE_COLORS.get(athlete_id, ATHLETE_COLORS[None])
+        slot = selector.tracker_to_slot(det.tracker_id)
+        color = ATHLETE_COLORS.get(slot, ATHLETE_COLORS[None])
 
         x1, y1, x2, y2 = (int(v) for v in det.bbox)
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-        label = athlete_id if athlete_id else f"id {det.tracker_id}"
+        label = SLOT_LABELS[slot] if slot else f"id {det.tracker_id}"
         cv2.putText(annotated, label, (x1, max(0, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
         if viz_config.get("draw_skeleton", True):
             _draw_skeleton(annotated, det.keypoints, color)
 
     if viz_config.get("draw_trail", True):
-        for athlete_id, points in trails.items():
-            color = ATHLETE_COLORS[athlete_id]
-            pts = [(int(x), int(y)) for x, y in points]
+        for slot, points in trails.items():
+            color = ATHLETE_COLORS[slot]
+            pts = [(int(p[0]), int(p[1])) if p is not None else None for p in points]
             for i in range(1, len(pts)):
+                if pts[i - 1] is None or pts[i] is None:
+                    continue
                 cv2.line(annotated, pts[i - 1], pts[i], color, 2)
 
     return annotated

@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from athletes import AthleteSelector
+from athletes import AKA, AO, AthleteSelector, is_seated
 
 
 @dataclass
@@ -13,17 +13,32 @@ class FakeDetection:
     bbox: tuple
 
 
-def make_selector():
-    # 1000x1000 frame, tiny thresholds so short synthetic tracks qualify.
+def make_selector(frame_width=1000, frame_height=1000):
+    # Tiny thresholds so short synthetic tracks qualify.
     return AthleteSelector(
         min_track_len=2, min_bbox_area_frac=0.001,
-        reassoc_max_dist_frac=0.5, frame_width=1000, frame_height=1000,
+        reassoc_max_dist_frac=0.5, frame_width=frame_width, frame_height=frame_height,
     )
+
+
+PASS = (True, None)
+FAIL_SEATED = (False, "seated")
+
+
+def feed(selector, frame_idx, dets, gps, filters, colors):
+    """Mimics one frame of main.py's loop: update stats, select, then record
+    each now-assigned slot's ground point (so later distance-based
+    re-association has something real to compare against)."""
+    selector.update_track_stats(frame_idx, dets, gps, filters, colors)
+    selector.select_two(frame_idx)
+    for det, gp in zip(dets, gps):
+        slot = selector.tracker_to_slot(det.tracker_id)
+        if slot is not None:
+            selector.note_ground_point(slot, gp)
 
 
 def test_picks_two_largest_persistent_tracks():
     selector = make_selector()
-    # tracker 1 and 2 are large and persistent; tracker 3 is small (referee/audience).
     for frame in range(3):
         dets = [
             FakeDetection(1, (0, 0, 200, 400)),
@@ -31,38 +46,111 @@ def test_picks_two_largest_persistent_tracks():
             FakeDetection(3, (900, 900, 920, 920)),
         ]
         gps = [(100, 400), (600, 400), (910, 920)]
-        selector.update_track_stats(frame, dets, gps)
-        selector.select_two(frame)
+        feed(selector, frame, dets, gps, [PASS, PASS, PASS], ["unknown"] * 3)
 
-    assert {selector.athlete_to_tracker["athlete_1"], selector.athlete_to_tracker["athlete_2"]} == {1, 2}
+    assert {selector.slot_to_tracker[AKA], selector.slot_to_tracker[AO]} == {1, 2}
 
 
-def test_reassociation_after_tracker_id_switch():
+def test_seated_person_never_gets_a_slot():
+    selector = make_selector()
+    for frame in range(5):
+        dets = [
+            FakeDetection(1, (0, 0, 200, 400)),
+            FakeDetection(2, (500, 0, 700, 400)),  # seated coach, same size as athlete 1
+        ]
+        gps = [(100, 400), (600, 400)]
+        feed(selector, frame, dets, gps, [PASS, FAIL_SEATED], ["unknown", "unknown"])
+
+    assert selector.slot_to_tracker[AO] is None
+    assert selector.tracker_to_slot(2) is None
+
+
+def test_color_match_overrides_distance_gate():
+    selector = make_selector()
+    for frame in range(5):
+        dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
+        gps = [(100, 400), (600, 400)]
+        feed(selector, frame, dets, gps, [PASS, PASS], ["red", "blue"])
+
+    assert selector.slot_to_tracker[AKA] == 1
+    assert selector.slot_last_point[AKA] == (100, 400)
+
+    # Tracker 1 disappears; a new tracker 5 appears FAR away (further than
+    # reassoc_max_dist from AKA's last known spot) but confidently reads red.
+    # Without color, this would be rejected by the distance gate and AKA
+    # would sit unassigned; with color it should be picked up right away.
+    dets = [FakeDetection(2, (500, 0, 700, 400)), FakeDetection(5, (900, 900, 999, 999))]
+    gps = [(600, 400), (950, 950)]
+    for frame in range(5, 9):
+        feed(selector, frame, dets, gps, [PASS, PASS], ["blue", "red"])
+
+    assert selector.slot_to_tracker[AKA] == 5
+
+
+def test_color_swap_correction():
+    selector = make_selector()
+    # AKA and AO get assigned backwards at bootstrap (no color info yet).
+    dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
+    gps = [(100, 400), (600, 400)]
+    for frame in range(3):
+        feed(selector, frame, dets, gps, [PASS, PASS], ["unknown", "unknown"])
+    assert selector.slot_to_tracker[AKA] == 1
+
+    # Now color evidence accumulates showing tracker 1 is actually blue and
+    # tracker 2 is actually red - selector should swap them.
+    for frame in range(3, 10):
+        feed(selector, frame, dets, gps, [PASS, PASS], ["blue", "red"])
+
+    assert selector.slot_to_tracker[AKA] == 2
+    assert selector.slot_to_tracker[AO] == 1
+    assert selector.color_swap_count == 1
+
+
+def test_is_seated_heuristic():
+    def kp(x, y, c=1.0):
+        return (x, y, c)
+
+    # shoulder y=50, hip y=100, knee y=160 -> thigh(60) > 0.35*torso(50): standing
+    standing = [kp(0, 0)] * 5 + [kp(50, 50), kp(60, 50)] + [kp(0, 0)] * 4 + [kp(50, 100), kp(60, 100)] + [kp(50, 160), kp(60, 160)] + [kp(0, 0), kp(0, 0)]
+    assert is_seated(standing) is False
+
+    # shoulder y=50, hip y=100, knee y=105 -> thigh(5) << 0.35*torso(50): seated
+    seated = [kp(0, 0)] * 5 + [kp(50, 50), kp(60, 50)] + [kp(0, 0)] * 4 + [kp(50, 100), kp(60, 100)] + [kp(50, 105), kp(60, 105)] + [kp(0, 0), kp(0, 0)]
+    assert is_seated(seated) is True
+
+
+def test_reassociation_falls_back_to_distance_when_color_unknown():
     selector = make_selector()
     dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
     gps = [(100, 400), (600, 400)]
     for frame in range(3):
-        selector.update_track_stats(frame, dets, gps)
-        selector.select_two(frame)
-        selector.note_ground_point("athlete_1", (100, 400))
-        selector.note_ground_point("athlete_2", (600, 400))
+        feed(selector, frame, dets, gps, [PASS, PASS], ["unknown", "unknown"])
+    assert selector.slot_to_tracker[AKA] == 1
 
-    assert selector.id_switch_count == 0
+    # Tracker 1 disappears; tracker 3 appears close to its last spot, no color read.
+    dets2 = [FakeDetection(2, (500, 0, 700, 400)), FakeDetection(3, (110, 10, 310, 410))]
+    gps2 = [(600, 400), (110, 410)]
+    feed(selector, 3, dets2, gps2, [PASS, PASS], ["unknown", "unknown"])
+    feed(selector, 4, dets2, gps2, [PASS, PASS], ["unknown", "unknown"])
 
-    # Tracker 1 disappears (occlusion), a new tracker 3 appears near its last
-    # position. min_track_len=2, so tracker 3 needs 2 frames before it's a
-    # candidate - athlete_1 has a brief (honest) gap in the meantime.
-    new_dets = [FakeDetection(2, (500, 0, 700, 400)), FakeDetection(3, (110, 10, 310, 410))]
-    new_gps = [(600, 400), (110, 410)]
-
-    # During this gap athlete_1's mapping still points at tracker 1, but that's
-    # harmless: tracker 1 has no detection this frame, so nothing gets drawn
-    # or exported under it.
-    selector.update_track_stats(3, new_dets, new_gps)
-    selector.select_two(3)
-    assert selector.tracker_to_athlete(3) is None
-
-    selector.update_track_stats(4, new_dets, new_gps)
-    selector.select_two(4)
-    assert selector.athlete_to_tracker["athlete_1"] == 3
+    assert selector.slot_to_tracker[AKA] == 3
     assert selector.id_switch_count == 1
+
+
+def test_far_unknown_color_candidate_is_left_unassigned():
+    selector = make_selector()
+    dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
+    gps = [(100, 400), (600, 400)]
+    for frame in range(3):
+        feed(selector, frame, dets, gps, [PASS, PASS], ["unknown", "unknown"])
+    assert selector.slot_to_tracker[AKA] == 1
+
+    # Tracker 1 disappears; tracker 9 appears far away with unknown color -
+    # should NOT be force-assigned.
+    dets2 = [FakeDetection(2, (500, 0, 700, 400)), FakeDetection(9, (900, 900, 999, 999))]
+    gps2 = [(600, 400), (950, 950)]
+    feed(selector, 3, dets2, gps2, [PASS, PASS], ["unknown", "unknown"])
+    feed(selector, 4, dets2, gps2, [PASS, PASS], ["unknown", "unknown"])
+
+    assert selector.slot_to_tracker[AKA] is None
+    assert selector.tracker_to_slot(9) is None

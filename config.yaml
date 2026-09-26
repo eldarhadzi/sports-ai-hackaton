@@ -5,10 +5,18 @@ device: auto
 
 model:
   # Any Ultralytics pose model name, e.g. yolo11n-pose.pt / yolo11s-pose.pt / yolo11m-pose.pt
+  # A detection-recall probe (model x conf x imgsz, 6 real clips) found nano @
+  # 640 @ conf 0.10 already gives 100% "at least 2 people detected" coverage
+  # on all 6 clips - bigger models / imgsz=1280 weren't needed and cost
+  # meaningfully more (imgsz=1280 dropped nano from ~80fps to ~28fps on MPS).
+  # The default conf=0.25 was the actual problem (missed small white-clad
+  # standing figures on a bright mat), not the model or resolution.
   name: yolo11n-pose.pt
+  conf: 0.10
 
-# Ultralytics built-in tracker config (bytetrack.yaml or botsort.yaml)
-tracker: bytetrack.yaml
+# Ultralytics tracker config. bytetrack_tuned.yaml raises track_buffer so a
+# brief miss doesn't immediately force a new tracker ID (see that file).
+tracker: bytetrack_tuned.yaml
 
 tracking:
   # Ignore tracks shorter than this many frames when choosing the 2 athletes.
@@ -25,9 +33,24 @@ tracking:
 
 athlete_selection:
   # Max allowed distance (as a fraction of the frame diagonal) when re-associating
-  # a lost athlete to a new tracker id after an ID switch. Beyond this, the
-  # re-association is still made (best available) but logged as suspicious.
+  # a lost athlete to a new tracker id after an ID switch AND no belt/glove
+  # color match is available. Beyond this, the athlete is left unassigned
+  # that frame rather than forced onto a low-confidence match.
   reassoc_max_dist_frac: 0.15
+
+classifier:
+  # A detection must pass this before it's even considered for AKA/AO -
+  # separate from calibration/tatami-mask, and the primary defense on an
+  # uncalibrated (e.g. moving-camera) clip.
+  # Mean V-channel brightness of the shoulder-to-hip torso region below this
+  # is treated as a dark suit jacket (referee/coach), not a white gi.
+  dark_brightness_threshold: 90
+  # Pixel rects [x1,y1,x2,y2] where a detection mostly inside is dropped -
+  # for broadcast score/technique overlays (e.g. "IPPON"/"YUKO" panels) that
+  # can get detected as a person. Empty by default: get exact coordinates
+  # from a real occurrence before guessing, since a wrong guess can just as
+  # easily hide a real athlete standing near the mat edge.
+  ignore_zones: []
 
 ground_point:
   # Ankle keypoint confidence needed to use ankle midpoint as ground point;
@@ -55,7 +78,13 @@ calibration:
 visualization:
   draw_skeleton: true
   draw_trail: true
-  trail_length: 30
+  # Trail covers the last N seconds of movement, not a fixed frame count.
+  trail_seconds: 2.0
+  # A ground-point jump bigger than this (pixels, one frame) breaks the
+  # trail line instead of drawing a long straight line across it - avoids
+  # the visually-misleading connector when a slot's tracker ID jumps
+  # between two different people.
+  trail_break_dist_px: 80
 
 export:
   data_dir: data
