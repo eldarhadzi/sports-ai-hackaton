@@ -199,3 +199,41 @@ def test_dark_navy_patch_counts_as_weak_blue_and_red_belt_as_red():
     r, b = patch_pixel_evidence(red)
     assert r == 1.0 and b == 0
     assert patch_pixel_evidence(white) == (0.0, 0.0)
+
+
+ZONE = {
+    "ref_resolution": [640, 360], "rect": [220, 235, 420, 340],
+    "only_when": {"rect": [260, 315, 380, 335], "dark_val_below": 70, "dark_frac_min": 0.25},
+}
+
+
+def _frame(w, h, graphic):
+    f = np.full((h, w, 3), 150, dtype=np.uint8)
+    if graphic:
+        sx, sy = w / 640, h / 360
+        f[int(315 * sy):int(335 * sy), int(260 * sx):int(380 * sx)] = 20   # dark text bar
+    return f
+
+
+def test_ignore_zone_only_when_graphic_is_up_and_scales_with_resolution():
+    from athletes import active_ignore_zones, in_ignore_zone
+    assert active_ignore_zones(_frame(640, 360, False), [ZONE]) == []
+    z640 = active_ignore_zones(_frame(640, 360, True), [ZONE])
+    assert z640 == [(220, 235, 420, 340)]
+    z1280 = active_ignore_zones(_frame(1280, 720, True), [ZONE])
+    assert z1280 == [(440, 470, 840, 680)]
+    assert in_ignore_zone((269, 233, 307, 307), z640)            # pictogram figure
+    assert not in_ignore_zone((250, 150, 290, 250), z640)        # athlete standing above the panel
+
+
+def test_track_level_dark_clothing_blocks_slot_even_when_frame_check_passes():
+    selector = make_selector()
+    dark = (False, "dark_clothing (brightness=62)")
+    for frame in range(10):
+        dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
+        gps = [(100, 400), (600, 400)]
+        # tracker 2 fails the dark check on 5/10 frames; on the others its
+        # torso is unmeasurable so the per-frame check passes.
+        feed(selector, frame, dets, gps, [PASS, dark if frame % 2 == 0 else PASS], ["unknown", "unknown"])
+    assert selector.is_official(selector.tracks[2], 9) and not selector.is_official(selector.tracks[1], 9)
+    assert selector.tracker_to_slot(2) is None

@@ -13,7 +13,9 @@ import cv2
 import yaml
 
 from pose_tracker import PoseTracker, LEFT_ANKLE_IDX, RIGHT_ANKLE_IDX
-from athletes import AKA, AO, AthleteSelector, classify_belt_color, evidence_score, passes_athlete_filter
+from athletes import (
+    AKA, AO, AthleteSelector, TrackStats, active_ignore_zones, classify_belt_color, evidence_score, passes_athlete_filter,
+)
 from calibration import calibrate_from_click, load_calibration, save_calibration
 from analysis.karate import compute_movement_stats
 from analysis.metrics import compute_clip_metrics
@@ -134,7 +136,9 @@ def build_provenance(config: dict, args, device: str) -> dict:
         "device": device,
         "active_features": {
             "hsv_conversion": "cv2.COLOR_BGR2HSV (unchanged since HEAD; no separate fix exists)",
-            "ignore_zones": config["classifier"].get("ignore_zones", []),
+            "ignore_zones": config["classifier"].get("ignore_zones") or [],
+            "track_level_dark_clothing_check": True,
+            "color_identity": "whole-clip pair-level evidence",
             "trail_breaking_px": config["visualization"]["trail_break_dist_px"],
             "debug_rendering": bool(args.debug),
         },
@@ -214,7 +218,8 @@ def main():
     )
 
     classifier_cfg = config["classifier"]
-    ignore_zones = [tuple(z) for z in classifier_cfg.get("ignore_zones", [])]
+    ignore_zone_cfgs = classifier_cfg.get("ignore_zones") or []
+    graphic_frames = 0
     dark_brightness_threshold = classifier_cfg["dark_brightness_threshold"]
 
     ankle_conf_threshold = config["ground_point"]["ankle_conf_threshold"]
@@ -249,6 +254,7 @@ def main():
     # evidence, so AKA/AO is decided from everything seen, not the first frames.
     cached = []
     track_evidence: dict[int, list[float]] = {}
+    track_dark: dict[int, list[tuple[int, bool]]] = {}
     while True:
         ok, frame = cap.read()
         if not ok:
@@ -257,20 +263,32 @@ def main():
 
         detections = tracker.track(frame)
         raw_ground_points = [ground_point_from_detection(d, ankle_conf_threshold) for d in detections]
+        ignore_zones = active_ignore_zones(frame, ignore_zone_cfgs)
+        graphic_frames += bool(ignore_zones)
         filter_results = [
             passes_athlete_filter(frame, d.bbox, d.keypoints, ignore_zones, dark_brightness_threshold)
             for d in detections
         ]
         color_results = [classify_belt_color(frame, d.bbox, d.keypoints) for d in detections]
-        for det, (_, _, (red, blue)) in zip(detections, color_results):
+        for det, (_, _, (red, blue)), (_, reject) in zip(detections, color_results, filter_results):
             if det.tracker_id is not None:
                 acc = track_evidence.setdefault(det.tracker_id, [0.0, 0.0])
                 acc[0] += red
                 acc[1] += blue
+                track_dark.setdefault(det.tracker_id, []).append(
+                    (len(cached), bool(reject and reject.startswith("dark_clothing")))
+                )
         cached.append((detections, raw_ground_points, filter_results, color_results))
         if len(cached) % 100 == 0:
             logger.info("Pass 1: %d frames", len(cached))
 
+    selector.final_dark_flags = track_dark
+    officials = sorted(
+        tid for tid, flags in track_dark.items()
+        if any(selector.is_official(TrackStats(tid, dark_flags=flags), f) for f, _ in flags[::5])
+    )
+    logger.info("Ignore-zone graphic on screen in %d/%d frames; tracks judged an official (dark clothing) at some point: %s",
+                graphic_frames, len(cached), officials)
     selector.final_evidence = {tid: (r, b) for tid, (r, b) in track_evidence.items()}
     logger.info(
         "Full-clip color evidence per track (red, blue, score): %s",
@@ -360,6 +378,8 @@ def main():
 
     write_run_meta(data_dir / f"{input_path.stem}_run_meta.json", {
         "provenance": provenance,
+        "graphic_frames": graphic_frames,
+        "official_tracks": officials,
         "model": config["model"]["name"],
         "tracker": config.get("tracker", "bytetrack.yaml"),
         "device": tracker.device,

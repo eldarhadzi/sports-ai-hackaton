@@ -51,15 +51,20 @@ WEAK_BLUE_WEIGHT = 0.5
 # pixel fraction; the evidence itself is the raw fraction, never thresholded.
 PATCH_LABEL_MIN_FRAC = 0.15
 
+# Track-level official (dark suit) verdict.
+OFFICIAL_MIN_DARK_FRAMES = 3
+OFFICIAL_DARK_FRAC = 0.3
+OFFICIAL_WINDOW = 15   # frames each side (pass 1) / 2x trailing (online)
+
 # Pair-level identity decision. Evidence is cumulative per track over the
 # whole clip: red_ev / blue_ev are sums of per-patch pixel fractions.
 MIN_EVIDENCE = 3.0
 # Both athletes have evidence: AKA is whoever is redder relative to the other
 # (score = (R-B)/(R+B) in [-1,1]); no absolute threshold, only this gap.
 PAIR_MARGIN = 0.25
-# Only one of the two has evidence: its own score must be at least this far
-# from 0 to say which belt it is.
-SINGLE_MIN = 0.3
+# No reference opponent (or only one has evidence): its own score must be at
+# least this far from 0 to say which belt it is.
+SINGLE_MIN = 0.5
 
 
 @dataclass
@@ -73,6 +78,13 @@ class TrackStats:
     last_reject_reason: str | None = None
     red_ev: float = 0.0
     blue_ev: float = 0.0
+    # (frame, failed-dark-check) per frame seen. Feeds a WINDOWED track-level
+    # verdict: the per-frame check silently passes whenever the torso
+    # keypoints are too weak to measure, so a suited referee slips through on
+    # exactly those frames. Windowed (not whole-lifetime) because tracker IDs
+    # get reused across different people (a track can be the referee for 30s
+    # and an athlete after).
+    dark_flags: list = field(default_factory=list)
 
     @property
     def avg_area(self) -> float:
@@ -160,6 +172,42 @@ def in_ignore_zone(bbox, ignore_zones, overlap_frac_threshold: float = 0.5) -> b
         bbox_ignore_overlap_frac(bbox, zone) >= overlap_frac_threshold
         for zone in ignore_zones
     )
+
+
+def scale_rect(rect, ref_resolution, frame_size):
+    """Rect given at ref_resolution (w, h) -> pixel rect at the actual frame size."""
+    sx, sy = frame_size[0] / ref_resolution[0], frame_size[1] / ref_resolution[1]
+    return (rect[0] * sx, rect[1] * sy, rect[2] * sx, rect[3] * sy)
+
+
+def graphic_on_screen(frame: np.ndarray, only_when: dict, ref_resolution) -> bool:
+    """Broadcast graphics (YUKO/IPPON panel) put a dark text bar at a fixed
+    spot; on a normal frame that spot is bright tatami. True when at least
+    `dark_frac_min` of the pixels in `rect` have V < `dark_val_below`."""
+    h, w = frame.shape[:2]
+    x1, y1, x2, y2 = (int(round(v)) for v in scale_rect(only_when["rect"], ref_resolution, (w, h)))
+    region = frame[max(y1, 0):min(y2, h), max(x1, 0):min(x2, w)]
+    if region.size == 0:
+        return False
+    v = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)[:, :, 2]
+    return float((v < only_when["dark_val_below"]).mean()) >= only_when["dark_frac_min"]
+
+
+def active_ignore_zones(frame: np.ndarray, zone_cfgs: list[dict]) -> list[tuple[float, float, float, float]]:
+    """Pixel-space ignore rects that apply to THIS frame. Each cfg:
+      rect: [x1,y1,x2,y2] at ref_resolution [w,h] (scaled to the real frame size)
+      only_when (optional): graphic-detection spec; without it the zone is
+        always on. With it, the zone applies only while the graphic is up, so
+        a real athlete standing there on a clean frame is never dropped."""
+    h, w = frame.shape[:2]
+    active = []
+    for cfg in zone_cfgs:
+        ref = cfg.get("ref_resolution", [w, h])
+        only_when = cfg.get("only_when")
+        if only_when is not None and not graphic_on_screen(frame, only_when, ref):
+            continue
+        active.append(scale_rect(cfg["rect"], ref, (w, h)))
+    return active
 
 
 def passes_athlete_filter(
@@ -303,6 +351,11 @@ class AthleteSelector:
         # first pass; when set it replaces the online running totals.
         self.final_evidence: dict[int, tuple[float, float]] | None = None
 
+        # Optional {tracker_id: [(frame, dark_flag), ...]} from pass 1: lets
+        # the official verdict use a window centered on the frame (future
+        # frames too) instead of only the trailing one.
+        self.final_dark_flags: dict[int, list] | None = None
+
         self.id_switch_count = 0
         self.color_swap_count = 0
         self.reassociation_log: list[dict] = []
@@ -321,10 +374,27 @@ class AthleteSelector:
             stats.last_seen_frame = frame_idx
             stats.last_passed_filter = passes
             stats.last_reject_reason = reject_reason
+            stats.dark_flags.append((frame_idx, bool(reject_reason and reject_reason.startswith("dark_clothing"))))
             stats.red_ev += red
             stats.blue_ev += blue
             if gp is not None:
                 stats.last_ground_point = gp
+
+    def is_official(self, track: TrackStats, frame_idx: int) -> bool:
+        """Windowed track-level dark-clothing rejection (referee/coach): the
+        track failed the dark check in >= OFFICIAL_DARK_FRAC of the frames
+        around `frame_idx` (centered with pass-1 flags, trailing online), so
+        it is an official on frames where its torso couldn't be measured too.
+        Evaluated in _candidate_tracks, i.e. on every (re)assignment."""
+        if self.final_dark_flags is not None:
+            flags = self.final_dark_flags.get(track.tracker_id, [])
+            lo, hi = frame_idx - OFFICIAL_WINDOW, frame_idx + OFFICIAL_WINDOW
+        else:
+            flags = track.dark_flags
+            lo, hi = frame_idx - 2 * OFFICIAL_WINDOW, frame_idx
+        window = [d for f, d in flags if lo <= f <= hi]
+        dark = sum(window)
+        return dark >= OFFICIAL_MIN_DARK_FRAMES and dark / len(window) >= OFFICIAL_DARK_FRAC
 
     def score(self, tracker_id: int | None) -> float | None:
         if tracker_id is None:
@@ -354,6 +424,7 @@ class AthleteSelector:
             t for t in self.tracks.values()
             if t.last_seen_frame == frame_idx
             and t.last_passed_filter
+            and not self.is_official(t, frame_idx)
             and t.frames_seen >= self.min_track_len
             and t.avg_area >= self.min_bbox_area
         ]
@@ -462,40 +533,43 @@ class AthleteSelector:
     def _resolve_identity(self, frame_idx: int):
         """Decide AKA/AO jointly for the pair from cumulative red/blue evidence.
 
-        Both holders have evidence: the redder one (relative, by PAIR_MARGIN)
-        is AKA - neither needs to clear an absolute bar. Only one has
-        evidence: its own score decides, and the other is the opposite by
-        elimination. No usable evidence: the slot keeps its internal
+        The two athletes are compared RELATIVELY: whoever is redder (by
+        PAIR_MARGIN) is AKA, neither needs to clear an absolute bar. When only
+        one slot is currently held, the empty slot's most recent holder is the
+        reference, so a lone athlete is still judged against their opponent
+        rather than in isolation (a pale gi bleeds into "slightly red"). With
+        no reference at all, the lone athlete's own score must clear
+        SINGLE_MIN. No usable evidence: the slot keeps its internal
         continuity label but identity_known stays False ("?")."""
         holders = {s: self.slot_to_tracker[s] for s in (AKA, AO)}
-        scores = {s: self.score(t) for s, t in holders.items()}
+        if holders[AKA] is None and holders[AO] is None:
+            self.identity_known = {AKA: False, AO: False}
+            return
+        ref = {s: holders[s] if holders[s] is not None else self.slot_last_tracker_id[s] for s in (AKA, AO)}
+        if ref[AKA] is not None and ref[AKA] == ref[AO]:
+            ref = {s: holders[s] for s in (AKA, AO)}
+        a, o = self.score(ref[AKA]), self.score(ref[AO])
         self.identity_known = {AKA: False, AO: False}
 
-        a, o = scores[AKA], scores[AO]
-        if holders[AKA] is not None and holders[AO] is not None:
-            if a is not None and o is not None:
-                if abs(a - o) < PAIR_MARGIN:
-                    return
-                aka_is_redder = a > o
-            else:
+        if a is not None and o is not None:
+            if abs(a - o) < PAIR_MARGIN:
+                return
+            aka_is_redder = a > o
+        else:
+            held = AKA if holders[AKA] is not None else AO
+            s_x = a if held == AKA else o
+            if holders[AKA] is not None and holders[AO] is not None:
+                held = AKA if a is not None else AO
                 s_x = a if a is not None else o
-                if s_x is None or abs(s_x) < SINGLE_MIN:
-                    return
-                x_slot = AKA if a is not None else AO
-                x_is_red = s_x > 0
-                aka_is_redder = x_is_red if x_slot == AKA else not x_is_red
-            if not aka_is_redder:
-                self._swap_slots(frame_idx, scores)
-            self.identity_known = {AKA: True, AO: True}
-            return
+            if s_x is None or abs(s_x) < SINGLE_MIN:
+                return
+            x_is_red = s_x > 0
+            aka_is_redder = x_is_red if held == AKA else not x_is_red
 
-        slot = AKA if holders[AKA] is not None else AO if holders[AO] is not None else None
-        if slot is None or scores[slot] is None or abs(scores[slot]) < SINGLE_MIN:
-            return
-        should_be = AKA if scores[slot] > 0 else AO
-        if should_be != slot:
-            self._swap_slots(frame_idx, scores)
-        self.identity_known[should_be] = True
+        if not aka_is_redder:
+            self._swap_slots(frame_idx, {AKA: a, AO: o})
+        for slot in (AKA, AO):
+            self.identity_known[slot] = self.slot_to_tracker[slot] is not None
 
     def _swap_slots(self, frame_idx: int, scores):
         old_aka, old_ao = self.slot_to_tracker[AKA], self.slot_to_tracker[AO]
