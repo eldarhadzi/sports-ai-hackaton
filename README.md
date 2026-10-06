@@ -527,3 +527,29 @@ metrics that can actually catch them.
 
 Run: `scripts/run_all.sh v5` (outputs `videos/output/v5/`, `data/v5/`).
 Each `run_meta.json` records commit, dirty flag, diff hash and active features.
+
+## Round 6 (two-pass identity from ground truth feedback)
+
+Ground-truth scoring of V5 (`scripts/gt_report.py v5`) showed identity was right
+whenever it committed (0 swaps on fixed-camera clips) but often said "?" (unknown).
+
+- **Why per-track evidence failed**: ByteTrack IDs get silently re-used across
+  people (clip 01: after a clinch tracker 3 jumps from the red athlete to the
+  blue one, then back), so pooling evidence per track over its lifetime mixes two
+  people. The decision is now made per FRAME over the whole clip (`src/identity.py`):
+  selection only builds two continuity slots A/B (position + color continuity);
+  each frame gives a pair signal x(t) = (A red-blue) - (B red-blue); a two-state
+  Viterbi picks "A is AKA" / "A is AO" over the whole clip, using past AND future
+  evidence, with one cost per change of AKA's side. Frames before the first
+  evidence get the label of the evidence that comes later; a stretch with no
+  usable evidence stays "?".
+- **Side-order prior**: when the A/B left-right order flips (typical ID jump after
+  a clinch), flipping the labels with it is free, keeping them costs (= AKA
+  changed sides). `--no-side-prior` turns it off for ablation: on clip 01 it is
+  the difference between 0 and 6 wrong labels.
+- **Diagnostics**: `scripts/gt_cases.py <run>` lists every missed / nonathlete /
+  swapped / unknown case with a debug image in `data/<run>/gt_cases/`;
+  `scripts/gt_sanity.py <run>` flags labels that contradict measured colors.
+  GT matching is now one-to-one by best IoU (first-over-threshold was ambiguous
+  in a clinch).
+- `scripts/compare_runs.py A B` compares two runs' metrics and video hashes.

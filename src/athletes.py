@@ -56,15 +56,15 @@ OFFICIAL_MIN_DARK_FRAMES = 3
 OFFICIAL_DARK_FRAC = 0.3
 OFFICIAL_WINDOW = 15   # frames each side (pass 1) / 2x trailing (online)
 
-# Pair-level identity decision. Evidence is cumulative per track over the
-# whole clip: red_ev / blue_ev are sums of per-patch pixel fractions.
-MIN_EVIDENCE = 3.0
-# Both athletes have evidence: AKA is whoever is redder relative to the other
-# (score = (R-B)/(R+B) in [-1,1]); no absolute threshold, only this gap.
-PAIR_MARGIN = 0.25
-# No reference opponent (or only one has evidence): its own score must be at
-# least this far from 0 to say which belt it is.
-SINGLE_MIN = 0.5
+# Evidence-based CONTINUITY (not identity - that is identity.py's job): when a
+# slot's track vanishes and new tracks appear, a candidate whose color evidence
+# in the next CONT_WINDOW frames resembles the lost slot's last CONT_WINDOW
+# frames is the same athlete. Scores are (R-B)/(R+B) in [-1, 1].
+CONT_WINDOW = 30
+MIN_WINDOW_EVIDENCE = 2.0
+CONT_OPPOSITE_MIN = 0.3  # a candidate is excluded only when its color is clearly the OPPOSITE
+                         # sign (both scores at least this strong); weak/near-zero is not evidence
+CONT_CONFIRMED = 0.4    # |score diff| below this => same athlete, distance gate waived
 
 
 @dataclass
@@ -76,8 +76,8 @@ class TrackStats:
     last_seen_frame: int = -1
     last_passed_filter: bool = False
     last_reject_reason: str | None = None
-    red_ev: float = 0.0
-    blue_ev: float = 0.0
+    # (frame, red, blue) per frame seen - windowed color evidence.
+    ev: list = field(default_factory=list)
     # (frame, failed-dark-check) per frame seen. Feeds a WINDOWED track-level
     # verdict: the per-frame check silently passes whenever the torso
     # keypoints are too weak to measure, so a suited referee slips through on
@@ -94,7 +94,7 @@ class TrackStats:
 def evidence_score(red: float, blue: float) -> float | None:
     """(R-B)/(R+B) in [-1 (all blue), +1 (all red)]; None if too little evidence."""
     total = red + blue
-    if total < MIN_EVIDENCE:
+    if total < MIN_WINDOW_EVIDENCE:
         return None
     return (red - blue) / total
 
@@ -344,12 +344,11 @@ class AthleteSelector:
         self.slot_last_tracker_id: dict[str, int | None] = {AKA: None, AO: None}
         self.slot_last_point: dict[str, tuple[float, float]] = {}
 
-        # Whether the CURRENT holder of each slot has color evidence backing
-        # its AKA/AO label. False -> render "?" instead of guessing from position.
-        self.identity_known: dict[str, bool] = {AKA: False, AO: False}
-        # Optional {tracker_id: (red, blue)} computed over the WHOLE clip in a
-        # first pass; when set it replaces the online running totals.
-        self.final_evidence: dict[int, tuple[float, float]] | None = None
+        # Slots AKA/AO here are internal continuity slots A/B only; which one
+        # is really AKA is decided offline in identity.py.
+        # Optional {tracker_id: [(frame, red, blue), ...]} from pass 1: lets the
+        # continuity check look at a candidate's FUTURE evidence too.
+        self.final_ev: dict[int, list] | None = None
 
         # Optional {tracker_id: [(frame, dark_flag), ...]} from pass 1: lets
         # the official verdict use a window centered on the frame (future
@@ -375,8 +374,7 @@ class AthleteSelector:
             stats.last_passed_filter = passes
             stats.last_reject_reason = reject_reason
             stats.dark_flags.append((frame_idx, bool(reject_reason and reject_reason.startswith("dark_clothing"))))
-            stats.red_ev += red
-            stats.blue_ev += blue
+            stats.ev.append((frame_idx, red, blue))
             if gp is not None:
                 stats.last_ground_point = gp
 
@@ -396,24 +394,18 @@ class AthleteSelector:
         dark = sum(window)
         return dark >= OFFICIAL_MIN_DARK_FRAMES and dark / len(window) >= OFFICIAL_DARK_FRAC
 
-    def score(self, tracker_id: int | None) -> float | None:
+    def window_score(self, tracker_id: int | None, lo: int, hi: int) -> float | None:
+        """(R-B)/(R+B) of a track's evidence over frames [lo, hi]; None if thin."""
         if tracker_id is None:
             return None
-        if self.final_evidence is not None:
-            red, blue = self.final_evidence.get(tracker_id, (0.0, 0.0))
+        if self.final_ev is not None:
+            rows = self.final_ev.get(tracker_id, [])
         else:
             t = self.tracks.get(tracker_id)
-            red, blue = (t.red_ev, t.blue_ev) if t else (0.0, 0.0)
+            rows = t.ev if t else []
+        red = sum(r for f, r, _ in rows if lo <= f <= hi)
+        blue = sum(b for f, _, b in rows if lo <= f <= hi)
         return evidence_score(red, blue)
-
-    def verdict(self, tracker_id: int | None) -> str:
-        """Absolute read of one track, used only to prefer a color-matching
-        candidate when re-associating; the AKA/AO decision is made jointly
-        in _resolve_identity()."""
-        sc = self.score(tracker_id)
-        if sc is None or abs(sc) < SINGLE_MIN:
-            return "unknown"
-        return "red" if sc > 0 else "blue"
 
     def _candidate_tracks(self, frame_idx: int, tatami_mask_fn) -> list[TrackStats]:
         # Must be visible AND pass the athlete filter THIS frame - a track
@@ -444,14 +436,11 @@ class AthleteSelector:
         candidates = self._candidate_tracks(frame_idx, tatami_mask_fn)
         candidates.sort(key=lambda t: t.avg_area, reverse=True)
         self._assign(frame_idx, candidates[:2])
-        self._resolve_identity(frame_idx)
         self.frame_log.append({
             "frame": frame_idx,
             "n_candidates": len(candidates),
             "aka_tracker": self.slot_to_tracker[AKA],
             "ao_tracker": self.slot_to_tracker[AO],
-            "aka_known": self.identity_known[AKA],
-            "ao_known": self.identity_known[AO],
         })
 
     def _closest(self, tracks: list[TrackStats], slot: str) -> TrackStats:
@@ -489,29 +478,57 @@ class AthleteSelector:
             if not unassigned_tracks:
                 continue
 
-            wanted_color = SLOT_COLORS[slot]
-            color_matches = [t for t in unassigned_tracks if self.verdict(t.tracker_id) == wanted_color]
+            # Color continuity: compare the lost slot's last evidence with each
+            # candidate's upcoming evidence (see CONT_* above).
+            ref = None
+            old_t = self.tracks.get(last_known_tracker_id)
+            if old_t is not None:
+                ref = self.window_score(last_known_tracker_id, old_t.last_seen_frame - CONT_WINDOW, old_t.last_seen_frame)
+            cand_scores = {
+                t.tracker_id: self.window_score(t.tracker_id, frame_idx, frame_idx + CONT_WINDOW)
+                if self.final_ev is not None else self.window_score(t.tracker_id, frame_idx - CONT_WINDOW, frame_idx)
+                for t in unassigned_tracks
+            }
+            def diff(t):
+                sc = cand_scores[t.tracker_id]
+                return None if ref is None or sc is None else abs(sc - ref)
+            def clearly_other(t):
+                sc = cand_scores[t.tracker_id]
+                return (
+                    ref is not None and sc is not None and sc * ref < 0
+                    and abs(sc) >= CONT_OPPOSITE_MIN and abs(ref) >= CONT_OPPOSITE_MIN
+                )
+            compatible = [t for t in unassigned_tracks if not clearly_other(t)]
+            if not compatible:
+                logger.warning(
+                    "frame %d: %s lost (tracker %s, color score %s); every candidate looks like a different "
+                    "athlete by color (candidate scores %s) - leaving unassigned",
+                    frame_idx, slot, last_known_tracker_id, None if ref is None else round(ref, 2),
+                    {k: None if v is None else round(v, 2) for k, v in cand_scores.items()},
+                )
+                continue
+            confirmed = [t for t in compatible if diff(t) is not None and diff(t) <= CONT_CONFIRMED]
 
             best = None
             reason = None
-            if color_matches:
-                best = self._closest(color_matches, slot)
-                reason = f"color match ({wanted_color})"
+            if confirmed:
+                best = self._closest(confirmed, slot)
+                reason = f"color continuity (score diff {diff(best):.2f})"
             else:
-                candidate = self._closest(unassigned_tracks, slot)
+                candidate = self._closest(compatible, slot)
                 dist = (
                     _dist(candidate.last_ground_point, last_point)
                     if last_point is not None and candidate.last_ground_point is not None else None
                 )
                 if dist is not None and dist > self.reassoc_max_dist:
                     logger.warning(
-                        "frame %d: %s has no confident match (color unknown, nearest candidate "
+                        "frame %d: %s has no confident match (nearest candidate "
                         "tracker %s at distance %.1f > max %.1f) - leaving unassigned this frame",
                         frame_idx, slot, candidate.tracker_id, dist, self.reassoc_max_dist,
                     )
                     continue
                 best = candidate
-                reason = "distance fallback (color unknown)" if last_point is not None else "bootstrap (no prior position)"
+                reason = "distance fallback" if last_point is not None else "bootstrap (no prior position)"
 
             unassigned_tracks.remove(best)
             self.slot_to_tracker[slot] = best.tracker_id
@@ -529,69 +546,6 @@ class AthleteSelector:
                 "frame": frame_idx, "slot": slot, "old_tracker_id": last_known_tracker_id,
                 "new_tracker_id": best.tracker_id, "reason": reason,
             })
-
-    def _resolve_identity(self, frame_idx: int):
-        """Decide AKA/AO jointly for the pair from cumulative red/blue evidence.
-
-        The two athletes are compared RELATIVELY: whoever is redder (by
-        PAIR_MARGIN) is AKA, neither needs to clear an absolute bar. When only
-        one slot is currently held, the empty slot's most recent holder is the
-        reference, so a lone athlete is still judged against their opponent
-        rather than in isolation (a pale gi bleeds into "slightly red"). With
-        no reference at all, the lone athlete's own score must clear
-        SINGLE_MIN. No usable evidence: the slot keeps its internal
-        continuity label but identity_known stays False ("?")."""
-        holders = {s: self.slot_to_tracker[s] for s in (AKA, AO)}
-        if holders[AKA] is None and holders[AO] is None:
-            self.identity_known = {AKA: False, AO: False}
-            return
-        ref = {s: holders[s] if holders[s] is not None else self.slot_last_tracker_id[s] for s in (AKA, AO)}
-        if ref[AKA] is not None and ref[AKA] == ref[AO]:
-            ref = {s: holders[s] for s in (AKA, AO)}
-        a, o = self.score(ref[AKA]), self.score(ref[AO])
-        self.identity_known = {AKA: False, AO: False}
-
-        if a is not None and o is not None:
-            if abs(a - o) < PAIR_MARGIN:
-                return
-            aka_is_redder = a > o
-        else:
-            held = AKA if holders[AKA] is not None else AO
-            s_x = a if held == AKA else o
-            if holders[AKA] is not None and holders[AO] is not None:
-                held = AKA if a is not None else AO
-                s_x = a if a is not None else o
-            if s_x is None or abs(s_x) < SINGLE_MIN:
-                return
-            x_is_red = s_x > 0
-            aka_is_redder = x_is_red if held == AKA else not x_is_red
-
-        if not aka_is_redder:
-            self._swap_slots(frame_idx, {AKA: a, AO: o})
-        for slot in (AKA, AO):
-            self.identity_known[slot] = self.slot_to_tracker[slot] is not None
-
-    def _swap_slots(self, frame_idx: int, scores):
-        old_aka, old_ao = self.slot_to_tracker[AKA], self.slot_to_tracker[AO]
-        logger.info(
-            "frame %d: AKA/AO swapped by color evidence (aka-slot tracker %s score=%s, ao-slot tracker %s score=%s)",
-            frame_idx, old_aka, scores[AKA], old_ao, scores[AO],
-        )
-        self.slot_to_tracker[AKA], self.slot_to_tracker[AO] = old_ao, old_aka
-        self.slot_last_tracker_id[AKA], self.slot_last_tracker_id[AO] = (
-            self.slot_last_tracker_id[AO], self.slot_last_tracker_id[AKA],
-        )
-        aka_pt, ao_pt = self.slot_last_point.get(AKA), self.slot_last_point.get(AO)
-        for slot, pt in ((AKA, ao_pt), (AO, aka_pt)):
-            if pt is not None:
-                self.slot_last_point[slot] = pt
-            else:
-                self.slot_last_point.pop(slot, None)
-        self.color_swap_count += 1
-        self.reassociation_log.append({
-            "frame": frame_idx, "slot": "swap", "old_tracker_id": old_aka,
-            "new_tracker_id": old_ao, "reason": "color evidence",
-        })
 
     def tracker_to_slot(self, tracker_id: int | None) -> str | None:
         if tracker_id is None:

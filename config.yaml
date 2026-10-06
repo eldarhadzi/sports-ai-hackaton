@@ -107,3 +107,7 @@ visualization:
 
 export:
   data_dir: data
+
+identity:
+  # Offline AKA/AO decision (src/identity.py). side_prior=false is color-only.
+  side_prior: true

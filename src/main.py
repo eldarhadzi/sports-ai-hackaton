@@ -14,12 +14,13 @@ import yaml
 
 from pose_tracker import PoseTracker, LEFT_ANKLE_IDX, RIGHT_ANKLE_IDX
 from athletes import (
-    AKA, AO, AthleteSelector, TrackStats, active_ignore_zones, classify_belt_color, evidence_score, passes_athlete_filter,
+    AKA, AO, AthleteSelector, TrackStats, active_ignore_zones, classify_belt_color, passes_athlete_filter,
 )
 from calibration import calibrate_from_click, load_calibration, save_calibration
 from analysis.karate import compute_movement_stats
 from analysis.metrics import compute_clip_metrics
-from visualization import draw_frame, render_heatmap, save_color_debug_strip
+from identity import label_orientation, pair_signal, side_order
+from visualization import draw_frame, render_heatmap, save_color_debug_strip, slot_style
 from analysis.ground_truth import compute_gt_metrics, gt_path, load_frame_detections, load_gt
 from export import JsonlWriter, write_run_meta
 
@@ -106,6 +107,10 @@ def parse_args():
         help="Debug rendering: grey boxes/skeletons for non-athletes in the output video, plus the patch strips.",
     )
     parser.add_argument(
+        "--no-side-prior", action="store_true",
+        help="Ablation: decide AKA/AO from color evidence only (no left/right side-order prior).",
+    )
+    parser.add_argument(
         "--debug-strips", action="store_true",
         help="Only save belt/glove patch debug strips to <data-dir>/debug_color/ (output video stays clean).",
     )
@@ -142,9 +147,10 @@ def build_provenance(config: dict, args, device: str) -> dict:
             "hsv_conversion": "cv2.COLOR_BGR2HSV (unchanged since HEAD; no separate fix exists)",
             "ignore_zones": config["classifier"].get("ignore_zones") or [],
             "track_level_dark_clothing_check": True,
-            "color_identity": "whole-clip pair-level evidence",
+            "color_identity": "offline per-frame pair signal + Viterbi orientation over the whole clip",
             "trail_breaking_px": config["visualization"]["trail_break_dist_px"],
             "debug_rendering (grey boxes for non-athletes)": bool(args.debug),
+            "identity_side_prior": bool(config.get("identity", {}).get("side_prior", True) and not args.no_side_prior),
             "color_debug_strips": bool(args.debug or args.debug_strips),
         },
     }
@@ -235,7 +241,7 @@ def main():
     ground_point_history = {AKA: [], AO: []}
     trails = {AKA: [], AO: []}  # each: list of (timestamp, point-or-None)
     color_debug_dir = data_dir / "debug_color"
-    color_debug_counts = {AKA: 0, AO: 0}
+    color_debug_counts = {AKA: 0, AO: 0}  # keyed by the athlete LABEL (aka/ao)
 
     tatami_mask_fn = (
         make_tatami_mask_fn(calibration, calib_cfg["tatami_width_m"], calib_cfg["tatami_height_m"])
@@ -258,7 +264,7 @@ def main():
     # Pass 2 re-reads the video and runs selection with that full-clip
     # evidence, so AKA/AO is decided from everything seen, not the first frames.
     cached = []
-    track_evidence: dict[int, list[float]] = {}
+    track_ev: dict[int, list[tuple[int, float, float]]] = {}
     track_dark: dict[int, list[tuple[int, bool]]] = {}
     while True:
         ok, frame = cap.read()
@@ -277,9 +283,7 @@ def main():
         color_results = [classify_belt_color(frame, d.bbox, d.keypoints) for d in detections]
         for det, (_, _, (red, blue)), (_, reject) in zip(detections, color_results, filter_results):
             if det.tracker_id is not None:
-                acc = track_evidence.setdefault(det.tracker_id, [0.0, 0.0])
-                acc[0] += red
-                acc[1] += blue
+                track_ev.setdefault(det.tracker_id, []).append((len(cached), red, blue))
                 track_dark.setdefault(det.tracker_id, []).append(
                     (len(cached), bool(reject and reject.startswith("dark_clothing")))
                 )
@@ -294,59 +298,100 @@ def main():
     )
     logger.info("Ignore-zone graphic on screen in %d/%d frames; tracks judged an official (dark clothing) at some point: %s",
                 graphic_frames, len(cached), officials)
-    selector.final_evidence = {tid: (r, b) for tid, (r, b) in track_evidence.items()}
+    selector.final_ev = track_ev
     logger.info(
-        "Full-clip color evidence per track (red, blue, score): %s",
-        {tid: (round(r, 1), round(b, 1), None if (sc := evidence_score(r, b)) is None else round(sc, 2))
-         for tid, (r, b) in sorted(track_evidence.items()) if r + b >= 1.0},
+        "Whole-clip color evidence per track (red, blue): %s",
+        {tid: (round(sum(r for _, r, _ in rows), 1), round(sum(b for _, _, b in rows), 1))
+         for tid, rows in sorted(track_ev.items()) if sum(r + b for _, r, b in rows) >= 1.0},
     )
 
+    # Stage 2a: continuity-only selection of the two slots (no pixels needed),
+    # plus the per-frame pair signal x(t) for the identity decision.
+    slot_frames = []
+    pair_x = []
+    slot_centers = []
+    for t, (detections, raw_ground_points, filter_results, color_results) in enumerate(cached):
+        evidence = [ev for _, _, ev in color_results]
+        selector.update_track_stats(t, detections, raw_ground_points, filter_results, evidence)
+        selector.select_two(t, tatami_mask_fn=tatami_mask_fn)
+
+        slot_of_det = [selector.tracker_to_slot(d.tracker_id) for d in detections]
+        smoothed = list(raw_ground_points)
+        slot_ev = {AKA: None, AO: None}
+        for i, (slot, raw_gp) in enumerate(zip(slot_of_det, raw_ground_points)):
+            if slot is None:
+                continue
+            slot_ev[slot] = evidence[i]
+            if raw_gp is not None:
+                history = ground_point_history[slot]
+                history.append(raw_gp)
+                del history[: max(0, len(history) - smoothing_window)]
+                smoothed[i] = moving_average_point(history)
+                selector.note_ground_point(slot, smoothed[i])
+        slot_frames.append((slot_of_det, smoothed))
+        pair_x.append(pair_signal(slot_ev[AKA], slot_ev[AO]))
+        boxes = {slot_of_det[i]: detections[i].bbox for i in range(len(detections)) if slot_of_det[i] is not None}
+        slot_centers.append(
+            None if len(boxes) < 2 else (
+                (boxes[AKA][0] + boxes[AKA][2]) / 2, (boxes[AO][0] + boxes[AO][2]) / 2,
+                ((boxes[AKA][2] - boxes[AKA][0]) + (boxes[AO][2] - boxes[AO][0])) / 2,
+            )
+        )
+
+    # Stage 2b: which continuity slot is AKA, decided over the whole clip.
+    orientation, identity_known, identity_switches = label_orientation(pair_x, side_order(slot_centers) if config.get('identity', {}).get('side_prior', True) and not args.no_side_prior else None)
+    selector.color_swap_count = identity_switches
+    logger.info(
+        "Identity: %d orientation switch(es); %.1f%% of frames have a labeled (non-'?') identity",
+        identity_switches, 100.0 * sum(identity_known) / max(len(identity_known), 1),
+    )
+
+    # Stage 2c: render + export with those labels.
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-    for detections, raw_ground_points, filter_results, color_results in cached:
+    for (detections, raw_ground_points, filter_results, color_results), (slot_of_det, smoothed_points) in zip(
+        cached, slot_frames,
+    ):
         ok, frame = cap.read()
         if not ok:
             break
-        evidence = [ev for _, _, ev in color_results]
+        known = identity_known[frame_idx]
+        aka_is_slot_a = orientation[frame_idx] == 1
 
-        selector.update_track_stats(frame_idx, detections, raw_ground_points, filter_results, evidence)
-        selector.select_two(frame_idx, tatami_mask_fn=tatami_mask_fn)
+        def label_of(slot):
+            return None if slot is None else (AKA if (slot == AKA) == aka_is_slot_a else AO)
 
         timestamp = frame_idx / fps
         visible_slots = set()
         slot_points = {AKA: None, AO: None}
+        det_styles = {}
 
-        for det, raw_gp, (passed, reject_reason), (color, color_samples, color_ev) in zip(
-            detections, raw_ground_points, filter_results, color_results,
+        for det, slot, raw_gp, smoothed_gp, (passed, reject_reason), (color, color_samples, color_ev) in zip(
+            detections, slot_of_det, raw_ground_points, smoothed_points, filter_results, color_results,
         ):
-            slot = selector.tracker_to_slot(det.tracker_id)
-            smoothed_gp = raw_gp
+            athlete = label_of(slot)
             tatami_point = None
 
+            if slot is not None:
+                det_styles[det.tracker_id] = slot_style(athlete, known)
             if slot is not None and raw_gp is not None:
                 visible_slots.add(slot)
-                history = ground_point_history[slot]
-                history.append(raw_gp)
-                del history[: max(0, len(history) - smoothing_window)]
-                smoothed_gp = moving_average_point(history)
                 slot_points[slot] = smoothed_gp
-                selector.note_ground_point(slot, smoothed_gp)
-
                 if calibration is not None:
                     tatami_point = calibration.to_tatami(smoothed_gp)
 
-                if (args.debug or args.debug_strips) and frame_idx % COLOR_DEBUG_EVERY == 0 and color_debug_counts[slot] < MAX_COLOR_DEBUG_FRAMES and any(
+                if (args.debug or args.debug_strips) and frame_idx % COLOR_DEBUG_EVERY == 0 and color_debug_counts[athlete] < MAX_COLOR_DEBUG_FRAMES and any(
                     s["color"] != "no_keypoint" for s in color_samples
                 ):
                     save_color_debug_strip(
                         frame, det.bbox, color_samples, color,
-                        color_debug_dir / f"{input_path.stem}_{slot}_f{frame_idx:05d}.png",
+                        color_debug_dir / f"{input_path.stem}_{athlete}_f{frame_idx:05d}.png",
                     )
-                    color_debug_counts[slot] += 1
+                    color_debug_counts[athlete] += 1
 
             record = {
                 "frame": frame_idx,
                 "timestamp": timestamp,
-                "athlete_id": slot,
+                "athlete_id": athlete,
                 "tracker_id": det.tracker_id,
                 "bbox": det.bbox,
                 "confidence": det.confidence,
@@ -355,24 +400,30 @@ def main():
                 "tatami_point": tatami_point,
                 "belt_color": color,
                 "color_evidence": [round(color_ev[0], 3), round(color_ev[1], 3)],
-                "identity_known": selector.identity_known[slot] if slot is not None else None,
+                "identity_known": known if slot is not None else None,
                 "passed_athlete_filter": passed,
                 "reject_reason": reject_reason,
             }
             jsonl.write(record)
-            if slot is not None:
+            if athlete is not None:
                 records.append(record)
 
+        # Trails follow the continuity slot (the same person), colored by that
+        # slot's current label.
         for slot in (AKA, AO):
             append_trail_point(trails[slot], timestamp, slot_points[slot], trail_break_dist)
             trim_trail(trails[slot], timestamp, trail_seconds)
+        trail_styles = {slot: slot_style(label_of(slot), known) for slot in (AKA, AO)}
 
-        annotated = draw_frame(frame, detections, selector, trails, visible_slots, config["visualization"], debug=args.debug)
+        annotated = draw_frame(
+            frame, detections, det_styles, trail_styles, trails, visible_slots,
+            config["visualization"], debug=args.debug,
+        )
         writer.write(annotated)
 
         frame_idx += 1
         if frame_idx % 100 == 0:
-            logger.info("Processed %d frames", frame_idx)
+            logger.info("Rendered %d frames", frame_idx)
 
     cap.release()
     writer.release()
@@ -385,6 +436,8 @@ def main():
         "provenance": provenance,
         "graphic_frames": graphic_frames,
         "official_tracks": officials,
+        "identity_switches": identity_switches,
+        "pct_frames_identity_known": 100.0 * sum(identity_known) / max(len(identity_known), 1),
         "model": config["model"]["name"],
         "tracker": config.get("tracker", "bytetrack.yaml"),
         "device": tracker.device,

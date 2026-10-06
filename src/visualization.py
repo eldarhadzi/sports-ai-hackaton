@@ -30,16 +30,22 @@ SLOT_LABELS = {AKA: "AKA", AO: "AO"}
 KEYPOINT_CONF_THRESHOLD = 0.3
 
 
-def slot_style(selector, slot):
-    """(label, BGR color). A slot whose holder has no color evidence is shown
-    as "?" in neutral white instead of a position-based AKA/AO guess."""
-    if slot is not None and not selector.identity_known.get(slot, False):
+def slot_style(label, known: bool):
+    """(display label, BGR color) for an athlete label ('aka'/'ao'/None). An
+    athlete whose identity has no supporting color evidence is shown as "?" in
+    neutral white instead of a position-based AKA/AO guess."""
+    if label is None:
+        return None, ATHLETE_COLORS[None]
+    if not known:
         return "?", (255, 255, 255)
-    return SLOT_LABELS.get(slot), ATHLETE_COLORS.get(slot, ATHLETE_COLORS[None])
+    return SLOT_LABELS[label], ATHLETE_COLORS[label]
 
 
-def draw_frame(frame, detections, selector, trails, visible_slots, viz_config, debug: bool = False) -> np.ndarray:
-    """trails: {slot: [(timestamp, point-or-None), ...]}. visible_slots: the
+def draw_frame(
+    frame, detections, det_styles, trail_styles, trails, visible_slots, viz_config, debug: bool = False,
+) -> np.ndarray:
+    """det_styles: {tracker_id: (label, color)} for the two athletes' detections;
+    trail_styles: {slot: (label, color)}. trails: {slot: [(timestamp, point-or-None), ...]}. visible_slots: the
     set of slots with a live detection THIS frame - a slot currently missing
     draws no trail at all, rather than a stale tail with nothing at its head.
     Only the two athlete slots are drawn; grey boxes for everyone else (and
@@ -47,14 +53,14 @@ def draw_frame(frame, detections, selector, trails, visible_slots, viz_config, d
     annotated = frame.copy()
 
     for det in detections:
-        slot = selector.tracker_to_slot(det.tracker_id)
-        if slot is None and not debug:
+        style = det_styles.get(det.tracker_id)
+        if style is None and not debug:
             continue
-        slot_label, color = slot_style(selector, slot)
+        slot_label, color = style if style else (None, ATHLETE_COLORS[None])
 
         x1, y1, x2, y2 = (int(v) for v in det.bbox)
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-        label = slot_label if slot else f"id {det.tracker_id}"
+        label = slot_label if style else f"id {det.tracker_id}"
         cv2.putText(annotated, label, (x1, max(0, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
         if viz_config.get("draw_skeleton", True):
@@ -64,7 +70,7 @@ def draw_frame(frame, detections, selector, trails, visible_slots, viz_config, d
         for slot, entries in trails.items():
             if slot not in visible_slots:
                 continue
-            _, color = slot_style(selector, slot)
+            _, color = trail_styles[slot]
             pts = [(int(p[0]), int(p[1])) if p is not None else None for _, p in entries]
             for i in range(1, len(pts)):
                 if pts[i - 1] is None or pts[i] is None:
