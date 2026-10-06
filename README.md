@@ -496,3 +496,34 @@ clip 02/03/05 AKA color-signal ambiguity (both described above) are
 identified but not fixed - they need a design decision (e.g. carrying color
 evidence across a low-confidence tracker hand-off, or narrowing red/blue's
 hue-band asymmetry) that goes beyond this round's scope.
+
+## Round 5 (ground truth, color identity, graphics zone, clean rendering)
+
+Self-consistency metrics (0 identity flips, 0 filter violations) hid two real
+errors the user saw on video: clip 06 had AKA/AO inverted and clip 05 had
+non-athletes holding a slot. This round fixes both root causes and adds
+metrics that can actually catch them.
+
+1. **Ground truth** - `scripts/label_ground_truth.py` (1 frame/second, boxes
+   numbered, click or key to mark AKA / AO / not visible; saves to
+   `data/ground_truth/<clip>.json`, resumable). `src/analysis/ground_truth.py`
+   scores a run: identity accuracy %, swapped / unknown identities, frames where
+   a slot holds a non-athlete, missed athletes. `main.py` adds them to
+   `<clip>_metrics.json` when labels exist; `scripts/gt_report.py <run>...`
+   prints the table. **No labels exist yet, so none of these are reported yet.**
+2. **Color identity** - belt + glove patches sampled on every frame (pass 1),
+   per-pixel red/blue fractions (dark navy/purple = weak blue), accumulated per
+   track over the whole clip. AKA is whoever is redder *relative to the other
+   athlete* (no absolute threshold); with no usable evidence the box shows `?`
+   instead of a position-based guess.
+3. **Ignore zone** - YUKO/IPPON panel zone is configurable, scaled to the video
+   resolution, and only applied on frames where the graphic's dark text bar is
+   on screen (`config.yaml: classifier.ignore_zones`). Dark-clothing (referee)
+   rejection is now also a windowed track-level verdict re-checked on every
+   (re)assignment, because the per-frame check silently passes when the torso
+   keypoints are unmeasurable.
+4. **Rendering** - normal output draws only AKA/AO + trails; `--debug` adds grey
+   boxes for everyone else; `--debug-strips` saves only the patch images.
+
+Run: `scripts/run_all.sh v5` (outputs `videos/output/v5/`, `data/v5/`).
+Each `run_meta.json` records commit, dirty flag, diff hash and active features.
