@@ -38,14 +38,18 @@ def slot_style(selector, slot):
     return SLOT_LABELS.get(slot), ATHLETE_COLORS.get(slot, ATHLETE_COLORS[None])
 
 
-def draw_frame(frame, detections, selector, trails, visible_slots, viz_config) -> np.ndarray:
+def draw_frame(frame, detections, selector, trails, visible_slots, viz_config, debug: bool = False) -> np.ndarray:
     """trails: {slot: [(timestamp, point-or-None), ...]}. visible_slots: the
     set of slots with a live detection THIS frame - a slot currently missing
-    draws no trail at all, rather than a stale tail with nothing at its head."""
+    draws no trail at all, rather than a stale tail with nothing at its head.
+    Only the two athlete slots are drawn; grey boxes for everyone else (and
+    their skeletons) appear only when debug=True (--debug)."""
     annotated = frame.copy()
 
     for det in detections:
         slot = selector.tracker_to_slot(det.tracker_id)
+        if slot is None and not debug:
+            continue
         slot_label, color = slot_style(selector, slot)
 
         x1, y1, x2, y2 = (int(v) for v in det.bbox)

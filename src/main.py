@@ -103,7 +103,11 @@ def parse_args():
     )
     parser.add_argument(
         "--debug", action="store_true",
-        help="Save belt/glove patch debug strips to <data-dir>/debug_color/.",
+        help="Debug rendering: grey boxes/skeletons for non-athletes in the output video, plus the patch strips.",
+    )
+    parser.add_argument(
+        "--debug-strips", action="store_true",
+        help="Only save belt/glove patch debug strips to <data-dir>/debug_color/ (output video stays clean).",
     )
     return parser.parse_args()
 
@@ -140,7 +144,8 @@ def build_provenance(config: dict, args, device: str) -> dict:
             "track_level_dark_clothing_check": True,
             "color_identity": "whole-clip pair-level evidence",
             "trail_breaking_px": config["visualization"]["trail_break_dist_px"],
-            "debug_rendering": bool(args.debug),
+            "debug_rendering (grey boxes for non-athletes)": bool(args.debug),
+            "color_debug_strips": bool(args.debug or args.debug_strips),
         },
     }
 
@@ -329,7 +334,7 @@ def main():
                 if calibration is not None:
                     tatami_point = calibration.to_tatami(smoothed_gp)
 
-                if args.debug and frame_idx % COLOR_DEBUG_EVERY == 0 and color_debug_counts[slot] < MAX_COLOR_DEBUG_FRAMES and any(
+                if (args.debug or args.debug_strips) and frame_idx % COLOR_DEBUG_EVERY == 0 and color_debug_counts[slot] < MAX_COLOR_DEBUG_FRAMES and any(
                     s["color"] != "no_keypoint" for s in color_samples
                 ):
                     save_color_debug_strip(
@@ -362,7 +367,7 @@ def main():
             append_trail_point(trails[slot], timestamp, slot_points[slot], trail_break_dist)
             trim_trail(trails[slot], timestamp, trail_seconds)
 
-        annotated = draw_frame(frame, detections, selector, trails, visible_slots, config["visualization"])
+        annotated = draw_frame(frame, detections, selector, trails, visible_slots, config["visualization"], debug=args.debug)
         writer.write(annotated)
 
         frame_idx += 1
