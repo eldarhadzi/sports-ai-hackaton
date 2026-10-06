@@ -4,7 +4,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from athletes import AKA, AO, AthleteSelector, is_seated
+import numpy as np
+
+from athletes import AKA, AO, AthleteSelector, is_seated, patch_pixel_evidence
 
 
 @dataclass
@@ -29,7 +31,8 @@ def feed(selector, frame_idx, dets, gps, filters, colors):
     """Mimics one frame of main.py's loop: update stats, select, then record
     each now-assigned slot's ground point (so later distance-based
     re-association has something real to compare against)."""
-    selector.update_track_stats(frame_idx, dets, gps, filters, colors)
+    evidence = [{"red": (1.0, 0.0), "blue": (0.0, 1.0)}.get(c, c if isinstance(c, tuple) else (0.0, 0.0)) for c in colors]
+    selector.update_track_stats(frame_idx, dets, gps, filters, evidence)
     selector.select_two(frame_idx)
     for det, gp in zip(dets, gps):
         slot = selector.tracker_to_slot(det.tracker_id)
@@ -154,3 +157,45 @@ def test_far_unknown_color_candidate_is_left_unassigned():
 
     assert selector.slot_to_tracker[AKA] is None
     assert selector.tracker_to_slot(9) is None
+
+
+def test_pair_decision_is_relative_not_absolute():
+    # Both athletes have only WEAK, mostly-blue evidence (dark belts at 360p),
+    # but tracker 2 is clearly less blue than tracker 1 -> tracker 2 is AKA.
+    selector = make_selector()
+    dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
+    gps = [(100, 400), (600, 400)]
+    for frame in range(10):
+        feed(selector, frame, dets, gps, [PASS, PASS], [(0.05, 0.9), (0.4, 0.5)])
+    assert selector.slot_to_tracker[AKA] == 2
+    assert selector.identity_known == {AKA: True, AO: True}
+
+
+def test_no_evidence_means_identity_unknown_not_a_position_guess():
+    selector = make_selector()
+    dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
+    gps = [(100, 400), (600, 400)]
+    for frame in range(5):
+        feed(selector, frame, dets, gps, [PASS, PASS], ["unknown", "unknown"])
+    assert selector.identity_known == {AKA: False, AO: False}
+
+
+def test_single_athlete_with_evidence_fixes_both_by_elimination():
+    selector = make_selector()
+    dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
+    gps = [(100, 400), (600, 400)]
+    for frame in range(8):
+        feed(selector, frame, dets, gps, [PASS, PASS], ["blue", "unknown"])
+    assert selector.slot_to_tracker[AO] == 1 and selector.slot_to_tracker[AKA] == 2
+    assert selector.identity_known == {AKA: True, AO: True}
+
+
+def test_dark_navy_patch_counts_as_weak_blue_and_red_belt_as_red():
+    navy = np.full((12, 12, 3), (70, 30, 35), dtype=np.uint8)      # BGR dark navy/purple
+    red = np.full((12, 12, 3), (30, 30, 200), dtype=np.uint8)
+    white = np.full((12, 12, 3), 235, dtype=np.uint8)
+    r, b = patch_pixel_evidence(navy)
+    assert r == 0 and b > 0
+    r, b = patch_pixel_evidence(red)
+    assert r == 1.0 and b == 0
+    assert patch_pixel_evidence(white) == (0.0, 0.0)

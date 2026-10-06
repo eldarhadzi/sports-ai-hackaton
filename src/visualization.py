@@ -30,6 +30,14 @@ SLOT_LABELS = {AKA: "AKA", AO: "AO"}
 KEYPOINT_CONF_THRESHOLD = 0.3
 
 
+def slot_style(selector, slot):
+    """(label, BGR color). A slot whose holder has no color evidence is shown
+    as "?" in neutral white instead of a position-based AKA/AO guess."""
+    if slot is not None and not selector.identity_known.get(slot, False):
+        return "?", (255, 255, 255)
+    return SLOT_LABELS.get(slot), ATHLETE_COLORS.get(slot, ATHLETE_COLORS[None])
+
+
 def draw_frame(frame, detections, selector, trails, visible_slots, viz_config) -> np.ndarray:
     """trails: {slot: [(timestamp, point-or-None), ...]}. visible_slots: the
     set of slots with a live detection THIS frame - a slot currently missing
@@ -38,11 +46,11 @@ def draw_frame(frame, detections, selector, trails, visible_slots, viz_config) -
 
     for det in detections:
         slot = selector.tracker_to_slot(det.tracker_id)
-        color = ATHLETE_COLORS.get(slot, ATHLETE_COLORS[None])
+        slot_label, color = slot_style(selector, slot)
 
         x1, y1, x2, y2 = (int(v) for v in det.bbox)
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
-        label = SLOT_LABELS[slot] if slot else f"id {det.tracker_id}"
+        label = slot_label if slot else f"id {det.tracker_id}"
         cv2.putText(annotated, label, (x1, max(0, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
         if viz_config.get("draw_skeleton", True):
@@ -52,7 +60,7 @@ def draw_frame(frame, detections, selector, trails, visible_slots, viz_config) -
         for slot, entries in trails.items():
             if slot not in visible_slots:
                 continue
-            color = ATHLETE_COLORS[slot]
+            _, color = slot_style(selector, slot)
             pts = [(int(p[0]), int(p[1])) if p is not None else None for _, p in entries]
             for i in range(1, len(pts)):
                 if pts[i - 1] is None or pts[i] is None:
@@ -82,7 +90,7 @@ def save_color_debug_strip(frame, bbox, samples, voted_color, out_path: Path, pa
         cv2.putText(label_bar, sample["label"][:10], (2, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1)
         color_bar = np.full((16, patch_display_size, 3), 0, dtype=np.uint8)
         text_color = {"red": (0, 0, 255), "blue": (255, 0, 0)}.get(sample["color"], (150, 150, 150))
-        cv2.putText(color_bar, sample["color"][:10], (2, 12), cv2.FONT_HERSHEY_SIMPLEX, 0.35, text_color, 1)
+        cv2.putText(color_bar, f"{sample['color'][:7]} {sample.get('red', 0):.1f}/{sample.get('blue', 0):.1f}", (2, 12), cv2.FONT_HERSHEY_SIMPLEX, 0.35, text_color, 1)
         tiles.append(np.vstack([label_bar, tile, color_bar]))
 
     strip = np.hstack(tiles) if tiles else np.zeros((1, 1, 3), dtype=np.uint8)

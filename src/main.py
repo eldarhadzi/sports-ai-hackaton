@@ -13,7 +13,7 @@ import cv2
 import yaml
 
 from pose_tracker import PoseTracker, LEFT_ANKLE_IDX, RIGHT_ANKLE_IDX
-from athletes import AKA, AO, AthleteSelector, classify_belt_color, passes_athlete_filter
+from athletes import AKA, AO, AthleteSelector, classify_belt_color, evidence_score, passes_athlete_filter
 from calibration import calibrate_from_click, load_calibration, save_calibration
 from analysis.karate import compute_movement_stats
 from analysis.metrics import compute_clip_metrics
@@ -21,7 +21,9 @@ from visualization import draw_frame, render_heatmap, save_color_debug_strip
 from analysis.ground_truth import compute_gt_metrics, gt_path, load_frame_detections, load_gt
 from export import JsonlWriter, write_run_meta
 
-MAX_COLOR_DEBUG_FRAMES = 10
+# Debug strips are spread over the whole clip: one every N frames per slot.
+COLOR_DEBUG_EVERY = 20
+MAX_COLOR_DEBUG_FRAMES = 40
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -241,6 +243,12 @@ def main():
     last_frame = None
     start_time = time.time()
 
+    # Pass 1: detect + track + sample belt/glove color on EVERY frame, keeping
+    # per-frame results and per-track cumulative evidence for the whole clip.
+    # Pass 2 re-reads the video and runs selection with that full-clip
+    # evidence, so AKA/AO is decided from everything seen, not the first frames.
+    cached = []
+    track_evidence: dict[int, list[float]] = {}
     while True:
         ok, frame = cap.read()
         if not ok:
@@ -254,16 +262,37 @@ def main():
             for d in detections
         ]
         color_results = [classify_belt_color(frame, d.bbox, d.keypoints) for d in detections]
-        colors = [c for c, _ in color_results]
+        for det, (_, _, (red, blue)) in zip(detections, color_results):
+            if det.tracker_id is not None:
+                acc = track_evidence.setdefault(det.tracker_id, [0.0, 0.0])
+                acc[0] += red
+                acc[1] += blue
+        cached.append((detections, raw_ground_points, filter_results, color_results))
+        if len(cached) % 100 == 0:
+            logger.info("Pass 1: %d frames", len(cached))
 
-        selector.update_track_stats(frame_idx, detections, raw_ground_points, filter_results, colors)
+    selector.final_evidence = {tid: (r, b) for tid, (r, b) in track_evidence.items()}
+    logger.info(
+        "Full-clip color evidence per track (red, blue, score): %s",
+        {tid: (round(r, 1), round(b, 1), None if (sc := evidence_score(r, b)) is None else round(sc, 2))
+         for tid, (r, b) in sorted(track_evidence.items()) if r + b >= 1.0},
+    )
+
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    for detections, raw_ground_points, filter_results, color_results in cached:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        evidence = [ev for _, _, ev in color_results]
+
+        selector.update_track_stats(frame_idx, detections, raw_ground_points, filter_results, evidence)
         selector.select_two(frame_idx, tatami_mask_fn=tatami_mask_fn)
 
         timestamp = frame_idx / fps
         visible_slots = set()
         slot_points = {AKA: None, AO: None}
 
-        for det, raw_gp, (passed, reject_reason), (color, color_samples) in zip(
+        for det, raw_gp, (passed, reject_reason), (color, color_samples, color_ev) in zip(
             detections, raw_ground_points, filter_results, color_results,
         ):
             slot = selector.tracker_to_slot(det.tracker_id)
@@ -282,7 +311,7 @@ def main():
                 if calibration is not None:
                     tatami_point = calibration.to_tatami(smoothed_gp)
 
-                if args.debug and color_debug_counts[slot] < MAX_COLOR_DEBUG_FRAMES and any(
+                if args.debug and frame_idx % COLOR_DEBUG_EVERY == 0 and color_debug_counts[slot] < MAX_COLOR_DEBUG_FRAMES and any(
                     s["color"] != "no_keypoint" for s in color_samples
                 ):
                     save_color_debug_strip(
@@ -302,6 +331,8 @@ def main():
                 "ground_point": smoothed_gp,
                 "tatami_point": tatami_point,
                 "belt_color": color,
+                "color_evidence": [round(color_ev[0], 3), round(color_ev[1], 3)],
+                "identity_known": selector.identity_known[slot] if slot is not None else None,
                 "passed_athlete_filter": passed,
                 "reject_reason": reject_reason,
             }
