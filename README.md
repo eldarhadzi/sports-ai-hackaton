@@ -366,18 +366,133 @@ failures (where are their joints?).
   approximate — it uses the image bounding box of observed points, not exact
   pixel-for-pixel alignment with the source frame's coordinate grid.
 
+## Round 3 (following frame-by-frame review of round 2's real output)
+
+Round 2's claimed fixes only partly held up under a real frame-by-frame check
+of the annotated video: the referee/judge-ID fix held, but standing athletes
+were still missed in the exact same frames, trails still drew long straight
+lines across jumps, and AKA/AO still flipped identity on real footage. This
+round fixed the confirmed root causes and is reported here with evidence, not
+just claims, per your instruction not to make further changes without numbers.
+
+### 1. Detection: `imgsz` was never actually wired in
+
+Round 2's README claimed nano @ imgsz=640 @ conf=0.10 gave 100% detection
+coverage - true for the standalone probe script it was measured with, but
+`imgsz` was never passed to `model.track()` in `PoseTracker` at all, so the
+real pipeline always ran at Ultralytics' default resolution regardless.
+Confirmed directly on kumite_02 frame 0 (both athletes standing still,
+clearly visible): at imgsz=640 the nano model does not detect the two
+standing athletes at all, down to conf=0.10 - only 3 boxes come back, all
+seated/dark-suited officials. At imgsz=1280 both athletes appear at
+conf 0.86-0.87 and cleanly pass the athlete filter. Fixed by actually passing
+`imgsz` through `PoseTracker` (now logged at startup); `config.yaml` sets it
+to 1280. Debug images for the full model x imgsz x conf sweep (12 combos,
+raw boxes + confidence + pass/drop reason per box) are in
+`data/debug_detection/`. Cost: nano @ 1280 runs ~20fps vs ~80fps @ 640 on
+this Mac - acceptable for an offline prototype.
+
+### 2. Color identity: stricter sampling + a lock
+
+Patches are now sampled only at the belt (hip-keypoint midpoint, shifted up
+toward the obi rather than the hip joints) and the wrists, clamped strictly
+inside the detection's own bbox so a patch can never land on the tatami floor
+(also red/blue) or a neighboring person. Saturation/value/keypoint-confidence
+bars were all raised. A tracker's color identity now locks after 20
+cumulative confident agreeing samples and only reverses if the opposite color
+wins >=85% of a separate, longer 45-sample window - a single noisy burst can
+no longer flip it. Debug strips (every sampled patch, labeled with role and
+read color) save automatically for the first 10 frames per athlete per clip
+to `data/debug_color/`.
+
+**This did not fully fix clip 06.** Verified directly (JSONL + a zoomed crop
+of the annotated frame, not just logs): tracker 3 reads a confident `red`
+belt at frames 75 and 120, but the reassociation log shows both slots went
+unassigned simultaneously around frame 76-77 (a mutual occlusion/clinch), and
+when the two trackers reappeared, distance-fallback re-assigned tracker 3 to
+**AO** and tracker 2 to **AKA** - backwards, and a zoomed crop of frame 120
+confirms it visually (the red-belt athlete is boxed blue/AO, the other is
+boxed red/AKA). This persists until a late, unrelated re-association around
+frame 654-659 happens to land correctly. Root cause: color evidence is keyed
+per tracker_id, and this clip's tracker IDs churn frequently (panning camera,
+small figures) - each churn resets that tracker's accumulated color count to
+zero, so neither the lock nor the swap-correction (which needs both slots'
+*current* tracker to independently reach a confident, opposite verdict) ever
+gets enough evidence before the next distance-fallback decision has to be
+made blind. This is a distance-fallback/ID-churn interaction, not a sampling
+accuracy problem, and is unfixed.
+
+Also worth flagging: aggregate belt_color reads across all six clips show
+`AO` reading confidently blue far more often than red in every single clip
+(expected, since AO is a fixed blue-corner label) - but `AKA` reads more
+`blue` than `red` in clips 02 and 05, and *only* blue (never red) in clip 03.
+Two possible explanations, not yet distinguished: a real identity mixup in
+those clips, or a real bias in the classifier itself - the blue hue
+acceptance band (100-130, 31 degrees) is 50% wider than red's wraparound band
+(0-10 and 170-179, 21 degrees total), so blue is statistically an easier bar
+to clear at low resolution/compression. Recommend visually checking AKA in
+clips 02/03/05 specifically. Clip 04 got **zero** confident color reads for
+either slot the entire clip - its AKA/AO assignment rests entirely on
+initial bootstrap order and was never validated by color at all.
+
+### 3. Trails: timestamp-based, not frame-count-based
+
+Trails now store `(timestamp, point)` pairs and are trimmed to the last 2
+real seconds by timestamp, not by counting the last N *appended* points -
+the bug was that a point only got appended when the athlete was actually
+detected that frame, so during any occlusion the "2 second" window silently
+covered more than 2 real seconds once the athlete reappeared, which is what
+produced the long straight lines. A jump over `trail_break_dist_px` still
+starts a new segment, and a slot with no detection in the current frame now
+draws no trail at all rather than a stale tail. Spot-checked clip 05 at 0s
+and ~20s (both previously flagged) - clean, no stray lines.
+
+### 4. Metrics: old (round 2) vs new (this round), all 6 clips
+
+Round 2's committed output was snapshotted to `data/baseline_round2/` before
+any round-3 changes, so this is a real before/after, not a re-run of the same
+code. Run `python scripts/compare_metrics.py` to reproduce (new value shown,
+old in parens):
+
+```
+clip                                 both%      one%     zero%     id_sw     flips filt_viol
+kumite_01_siroki_kadar          93.4(57.6) 5.3(28.9) 1.4(13.5)      5(2)      0(0)      0(0)
+kumite_02_siroki_kadar          64.9(46.0)34.1(18.4) 1.0(35.6)     16(6)      0(0)      0(0)
+kumite_03_siroki_kadar          97.1(43.6) 0.0(30.4) 2.9(26.0)      6(6)      0(0)      0(0)
+kumite_04_siroki_kadar_pauza    97.4(41.5) 0.0(42.0) 2.6(16.5)      0(1)      0(0)      0(0)
+kumite_05_siroki_kadar          86.2(29.1)12.8(45.2) 1.0(25.6)    27(24)      0(0)      0(0)
+kumite_06_medium_kamera_prati   75.6(81.8)22.9(17.0)  1.5(1.2)      6(7)      0(1)      0(0)
+```
+
+`both%` (both slots assigned) improved substantially on 5/6 clips - clip 06
+dropped slightly (81.8% -> 75.6%), not yet investigated further.
+`filter_violations` stayed 0 everywhere (that invariant still holds).
+`id_switch_count` rose on several clips - expected, since far more frames are
+now actually being tracked at all (imgsz=1280 catches far more of both
+athletes, so there are more live frames in which a switch can happen);
+`color_swap_count` (the explicit two-slot swap correction) is 0 everywhere
+this round, including clip 06 - but per the clip 06 finding above, that's
+because the wrong assignment there was never in a state the swap-correction
+could catch, not because nothing was wrong.
+
+**Per your instruction, no further changes were made past this point** -
+this report and the clip 06/AKA-in-02/03/05 findings above are for you to
+review before authorizing another round.
+
 ## Status
 
 **Round 1** (video I/O, pose+tracking, rendering, JSONL/run_meta export,
-movement stats, manual tatami calibration + homography, heatmaps) and
+movement stats, manual tatami calibration + homography, heatmaps),
 **round 2** (steps A-E: detection recall tuning, athlete classifier, AKA/AO
-color identity, trail breaking, per-clip metrics) are both built and run on
-all 6 real clips. 11/11 unit tests passing. Interactive click-to-calibrate is
-implemented but untested (no display in this environment) — `--corners`
-covers the same code path minus the mouse callback.
+color identity, trail breaking, per-clip metrics), and **round 3** (real
+imgsz wiring, stricter/locked color identity, timestamp-based trails,
+old-vs-new metrics - see above) are all built and run on all 6 real clips.
+11/11 unit tests passing. Interactive click-to-calibrate is implemented but
+untested (no display in this environment) — `--corners` covers the same code
+path minus the mouse callback.
 
-**Not done this round**: no calibration or heatmap changes, per your
-instruction to focus only on selection/ID. Open items if you want another
-pass: clip 05's color-match oscillation near a dense scoring pileup, and the
-zoom-dependent distance threshold on clip 06 (a fixed fraction-of-diagonal
-budget is stricter in pixel terms on a closer camera).
+**Not done this round**: the clip 06 backwards-identity bug and the
+clip 02/03/05 AKA color-signal ambiguity (both described above) are
+identified but not fixed - they need a design decision (e.g. carrying color
+evidence across a low-confidence tracker hand-off, or narrowing red/blue's
+hue-band asymmetry) that goes beyond this round's scope.

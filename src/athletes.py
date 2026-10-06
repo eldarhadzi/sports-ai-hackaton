@@ -34,6 +34,24 @@ COLOR_VOTE_WINDOW = 15
 COLOR_VOTE_MIN_COUNT = 4
 COLOR_VOTE_MIN_MAJORITY = 0.6
 
+# Color sampling needs a much higher bar than the seated/brightness filter:
+# a wrong hip/wrist position (even at KEYPOINT_CONF_MIN=0.3) can land the
+# patch on the tatami (also red/blue) instead of the belt/glove.
+KEYPOINT_CONF_MIN_COLOR = 0.55
+COLOR_SAT_MIN = 90
+COLOR_VAL_MIN = 50
+COLOR_PATCH_RADIUS = 6
+
+# Identity locking: once a tracker has this many *cumulative* confident
+# same-color reads, its color is locked and reported unconditionally -
+# a single noisy frame (or a short burst near the tatami) can no longer
+# flip AKA/AO. A lock only reverses if the opposite color dominates a
+# longer, separate rolling window strongly enough to be trusted.
+COLOR_LOCK_MIN_COUNT = 20
+COLOR_UNLOCK_WINDOW = 45
+COLOR_UNLOCK_MIN_COUNT = 20
+COLOR_UNLOCK_MAJORITY = 0.85
+
 
 @dataclass
 class TrackStats:
@@ -45,13 +63,51 @@ class TrackStats:
     last_passed_filter: bool = False
     last_reject_reason: str | None = None
     color_votes: deque = field(default_factory=lambda: deque(maxlen=COLOR_VOTE_WINDOW))
+    # Cumulative confident-sample counts (uncapped) - drive the initial lock.
+    color_counts: dict = field(default_factory=lambda: {"red": 0, "blue": 0})
+    locked_color: str | None = None
+    # Only used once locked - a separate, longer window to decide whether
+    # evidence for the OPPOSITE color is strong enough to reverse the lock.
+    unlock_votes: deque = field(default_factory=lambda: deque(maxlen=COLOR_UNLOCK_WINDOW))
 
     @property
     def avg_area(self) -> float:
         return self.total_area / self.frames_seen if self.frames_seen else 0.0
 
+    def record_color_vote(self, color: str) -> None:
+        self.color_votes.append(color)
+        if color == "unknown":
+            return
+
+        if self.locked_color is None:
+            self.color_counts[color] += 1
+            if self.color_counts[color] >= COLOR_LOCK_MIN_COUNT:
+                self.locked_color = color
+                logger.info(
+                    "tracker %d: color identity locked to %s (%d agreeing samples)",
+                    self.tracker_id, color, self.color_counts[color],
+                )
+            return
+
+        self.unlock_votes.append(color)
+        opposite = "blue" if self.locked_color == "red" else "red"
+        if len(self.unlock_votes) >= COLOR_UNLOCK_MIN_COUNT:
+            opp_count = sum(1 for c in self.unlock_votes if c == opposite)
+            if opp_count / len(self.unlock_votes) >= COLOR_UNLOCK_MAJORITY:
+                logger.warning(
+                    "tracker %d: color lock REVERSED %s -> %s (%d/%d = %.0f%% over last %d confident samples)",
+                    self.tracker_id, self.locked_color, opposite,
+                    opp_count, len(self.unlock_votes), 100 * opp_count / len(self.unlock_votes),
+                    len(self.unlock_votes),
+                )
+                self.locked_color = opposite
+                self.color_counts = {"red": 0, "blue": 0}
+                self.unlock_votes.clear()
+
     @property
     def color_verdict(self) -> str:
+        if self.locked_color is not None:
+            return self.locked_color
         votes = [c for c in self.color_votes if c != "unknown"]
         if len(votes) < COLOR_VOTE_MIN_COUNT:
             return "unknown"
@@ -67,8 +123,8 @@ def _dist(a, b) -> float:
     return math.dist(a, b)
 
 
-def _kp_ok(keypoints, idx: int) -> bool:
-    return keypoints[idx][2] >= KEYPOINT_CONF_MIN
+def _kp_ok(keypoints, idx: int, threshold: float = KEYPOINT_CONF_MIN) -> bool:
+    return keypoints[idx][2] >= threshold
 
 
 def is_seated(keypoints) -> bool | None:
@@ -160,44 +216,84 @@ def passes_athlete_filter(
     return True, None
 
 
-def classify_belt_color(frame: np.ndarray, keypoints) -> str:
-    """Samples small patches around hips (belt) and wrists (gloves), classifies
-    each red/blue/unknown by hue, and majority-votes. Returns "unknown" if no
-    patch yields a confident read."""
+def _belt_point(keypoints, bbox) -> tuple[float, float] | None:
+    """Midpoint between the two hip keypoints, nudged up toward where the
+    obi/belt actually sits rather than the hip joints themselves - moving up
+    (not down toward the legs/floor) also keeps the patch away from the
+    tatami, which is the same red/blue as the belts."""
+    if not (_kp_ok(keypoints, LEFT_HIP, KEYPOINT_CONF_MIN_COLOR) and _kp_ok(keypoints, RIGHT_HIP, KEYPOINT_CONF_MIN_COLOR)):
+        return None
+    lx, ly, _ = keypoints[LEFT_HIP]
+    rx, ry, _ = keypoints[RIGHT_HIP]
+    mx, my = (lx + rx) / 2.0, (ly + ry) / 2.0
+    bbox_h = max(bbox[3] - bbox[1], 1.0)
+    my -= 0.06 * bbox_h
+    return mx, my
+
+
+def classify_belt_color(
+    frame: np.ndarray, bbox: tuple[float, float, float, float], keypoints,
+) -> tuple[str, list[dict]]:
+    """Samples a small patch at the belt (hip midpoint, shifted up) and at
+    each wrist (glove), strictly clamped inside the detection's own bbox so a
+    patch can never land on the tatami floor or another person. Classifies
+    each red/blue/unknown by hue (requiring high saturation) and
+    majority-votes. Returns (color, samples) - samples is for debug
+    visualization: one dict per attempted patch with its label, pixel rect,
+    and read color (or "no_keypoint" if the keypoint wasn't confident enough
+    to sample at all)."""
+    samples: list[dict] = []
     votes = []
-    for idx in (LEFT_HIP, RIGHT_HIP, LEFT_WRIST, RIGHT_WRIST):
-        if not _kp_ok(keypoints, idx):
+
+    belt_pt = _belt_point(keypoints, bbox)
+    if belt_pt is not None:
+        color, rect = _sample_patch_color(frame, bbox, *belt_pt)
+        samples.append({"label": "belt", "rect": rect, "color": color})
+        if color != "unknown":
+            votes.append(color)
+    else:
+        samples.append({"label": "belt", "rect": None, "color": "no_keypoint"})
+
+    for label, idx in (("left_wrist", LEFT_WRIST), ("right_wrist", RIGHT_WRIST)):
+        if not _kp_ok(keypoints, idx, KEYPOINT_CONF_MIN_COLOR):
+            samples.append({"label": label, "rect": None, "color": "no_keypoint"})
             continue
         x, y = keypoints[idx][0], keypoints[idx][1]
-        color = _sample_patch_color(frame, x, y)
+        color, rect = _sample_patch_color(frame, bbox, x, y)
+        samples.append({"label": label, "rect": rect, "color": color})
         if color != "unknown":
             votes.append(color)
 
     if not votes:
-        return "unknown"
+        return "unknown", samples
     red = votes.count("red")
     blue = votes.count("blue")
-    return "red" if red >= blue else "blue"
+    return ("red" if red >= blue else "blue"), samples
 
 
-def _sample_patch_color(frame: np.ndarray, x: float, y: float, radius: int = 8) -> str:
-    h, w = frame.shape[:2]
-    x1, y1 = max(int(x - radius), 0), max(int(y - radius), 0)
-    x2, y2 = min(int(x + radius), w), min(int(y + radius), h)
+def _sample_patch_color(
+    frame: np.ndarray, bbox: tuple[float, float, float, float], x: float, y: float,
+    radius: int = COLOR_PATCH_RADIUS,
+) -> tuple[str, tuple[int, int, int, int] | None]:
+    bx1, by1, bx2, by2 = bbox
+    x1 = max(int(x - radius), int(bx1))
+    y1 = max(int(y - radius), int(by1))
+    x2 = min(int(x + radius), int(bx2))
+    y2 = min(int(y + radius), int(by2))
     if x2 <= x1 or y2 <= y1:
-        return "unknown"
+        return "unknown", None
 
     patch = frame[y1:y2, x1:x2]
     hsv = cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)
     mean_h, mean_s, mean_v = hsv.reshape(-1, 3).mean(axis=0)
 
-    if mean_s < 60 or mean_v < 40:
-        return "unknown"
+    if mean_s < COLOR_SAT_MIN or mean_v < COLOR_VAL_MIN:
+        return "unknown", (x1, y1, x2, y2)
     if mean_h <= 10 or mean_h >= 170:
-        return "red"
+        return "red", (x1, y1, x2, y2)
     if 100 <= mean_h <= 130:
-        return "blue"
-    return "unknown"
+        return "blue", (x1, y1, x2, y2)
+    return "unknown", (x1, y1, x2, y2)
 
 
 class AthleteSelector:
@@ -242,7 +338,7 @@ class AthleteSelector:
             stats.last_seen_frame = frame_idx
             stats.last_passed_filter = passes
             stats.last_reject_reason = reject_reason
-            stats.color_votes.append(color)
+            stats.record_color_vote(color)
             if gp is not None:
                 stats.last_ground_point = gp
 

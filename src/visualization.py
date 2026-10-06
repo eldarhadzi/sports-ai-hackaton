@@ -30,7 +30,10 @@ SLOT_LABELS = {AKA: "AKA", AO: "AO"}
 KEYPOINT_CONF_THRESHOLD = 0.3
 
 
-def draw_frame(frame, detections, selector, trails, viz_config) -> np.ndarray:
+def draw_frame(frame, detections, selector, trails, visible_slots, viz_config) -> np.ndarray:
+    """trails: {slot: [(timestamp, point-or-None), ...]}. visible_slots: the
+    set of slots with a live detection THIS frame - a slot currently missing
+    draws no trail at all, rather than a stale tail with nothing at its head."""
     annotated = frame.copy()
 
     for det in detections:
@@ -46,15 +49,49 @@ def draw_frame(frame, detections, selector, trails, viz_config) -> np.ndarray:
             _draw_skeleton(annotated, det.keypoints, color)
 
     if viz_config.get("draw_trail", True):
-        for slot, points in trails.items():
+        for slot, entries in trails.items():
+            if slot not in visible_slots:
+                continue
             color = ATHLETE_COLORS[slot]
-            pts = [(int(p[0]), int(p[1])) if p is not None else None for p in points]
+            pts = [(int(p[0]), int(p[1])) if p is not None else None for _, p in entries]
             for i in range(1, len(pts)):
                 if pts[i - 1] is None or pts[i] is None:
                     continue
                 cv2.line(annotated, pts[i - 1], pts[i], color, 2)
 
     return annotated
+
+
+def save_color_debug_strip(frame, bbox, samples, voted_color, out_path: Path, patch_display_size: int = 72):
+    """Saves one debug image showing every patch classify_belt_color() sampled
+    this frame (belt, left wrist, right wrist), upscaled and labeled with its
+    role and read color, so a wrong read (e.g. picking up the tatami instead
+    of the belt) is visible directly rather than inferred from logs."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    tiles = []
+    for sample in samples:
+        tile = np.full((patch_display_size, patch_display_size, 3), 40, dtype=np.uint8)
+        rect = sample["rect"]
+        if rect is not None:
+            x1, y1, x2, y2 = rect
+            patch = frame[y1:y2, x1:x2]
+            if patch.size > 0:
+                tile = cv2.resize(patch, (patch_display_size, patch_display_size), interpolation=cv2.INTER_NEAREST)
+        label_bar = np.full((20, patch_display_size, 3), 0, dtype=np.uint8)
+        cv2.putText(label_bar, sample["label"][:10], (2, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1)
+        color_bar = np.full((16, patch_display_size, 3), 0, dtype=np.uint8)
+        text_color = {"red": (0, 0, 255), "blue": (255, 0, 0)}.get(sample["color"], (150, 150, 150))
+        cv2.putText(color_bar, sample["color"][:10], (2, 12), cv2.FONT_HERSHEY_SIMPLEX, 0.35, text_color, 1)
+        tiles.append(np.vstack([label_bar, tile, color_bar]))
+
+    strip = np.hstack(tiles) if tiles else np.zeros((1, 1, 3), dtype=np.uint8)
+    header = np.full((20, strip.shape[1], 3), 0, dtype=np.uint8)
+    header_color = {"red": (0, 0, 255), "blue": (255, 0, 0)}.get(voted_color, (150, 150, 150))
+    cv2.putText(header, f"voted: {voted_color}", (2, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.45, header_color, 1)
+    strip = np.vstack([header, strip])
+
+    cv2.imwrite(str(out_path), strip)
 
 
 def _draw_skeleton(frame, keypoints, color):

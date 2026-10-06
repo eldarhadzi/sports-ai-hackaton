@@ -44,21 +44,26 @@ def resolve_device(requested: str) -> str:
 class PoseTracker:
     """Wraps model.track(..., persist=True) so callers never touch Ultralytics directly."""
 
-    def __init__(self, model_name: str, device: str, tracker_cfg: str = "bytetrack.yaml", conf: float = 0.25):
+    def __init__(
+        self, model_name: str, device: str, tracker_cfg: str = "bytetrack.yaml",
+        conf: float = 0.25, imgsz: int = 640,
+    ):
         self.device = resolve_device(device)
         self.tracker_cfg = tracker_cfg
         self.conf = conf
+        self.imgsz = imgsz
         self.model = YOLO(model_name)
         self._mps_fallback_done = False
         logger.info(
-            "PoseTracker: model=%s device=%s tracker=%s conf=%.2f", model_name, self.device, tracker_cfg, conf,
+            "PoseTracker: model=%s device=%s tracker=%s conf=%.2f imgsz=%d",
+            model_name, self.device, tracker_cfg, conf, imgsz,
         )
 
     def track(self, frame) -> list[Detection]:
         try:
             results = self.model.track(
                 frame, persist=True, device=self.device, tracker=self.tracker_cfg,
-                conf=self.conf, verbose=False,
+                conf=self.conf, imgsz=self.imgsz, verbose=False,
             )
         except Exception as exc:
             if self.device == "mps" and not self._mps_fallback_done:
@@ -69,7 +74,7 @@ class PoseTracker:
                 self._mps_fallback_done = True
                 results = self.model.track(
                     frame, persist=True, device=self.device, tracker=self.tracker_cfg,
-                    conf=self.conf, verbose=False,
+                    conf=self.conf, imgsz=self.imgsz, verbose=False,
                 )
             else:
                 raise
