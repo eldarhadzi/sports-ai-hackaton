@@ -553,3 +553,83 @@ whenever it committed (0 swaps on fixed-camera clips) but often said "?" (unknow
   GT matching is now one-to-one by best IoU (first-over-threshold was ambiguous
   in a clinch).
 - `scripts/compare_runs.py A B` compares two runs' metrics and video hashes.
+
+## Round 7 (labeling tool, back-fill, generalized graphic handling)
+
+- `scripts/label_ground_truth.py --clip X --frames 192,240,384` or `--flagged RUN`
+  (frames `gt_sanity` flags; status bar shows why; `c` shows the `gt_cases` image).
+- **Back-fill**: track eligibility (min length, mean size) and ranking use each
+  track's whole-clip stats from pass 1, so a track is a candidate from its first
+  frame, not after 10 sightings. Fixes the "nobody assigned at frame 0" misses.
+- **Graphics**: ignore zones apply only while their graphic is up. The detector now
+  takes a dark bar (YUKO/IPPON) or an HSV color swatch (Chukoku: yellow card). The
+  on-window is widened by `graphic_fade_pad_seconds` (0.5s) each side because the
+  pictogram figures show before the marker pixels do (clip 05 frame 0 put two
+  pictogram figures in the slots without this). Current slot holders keep their
+  place in the top two, so a newcomer cannot push out an athlete.
+- Skipped on purpose: post-bout mat margin (bowing/walking off).
+
+## Current status (BASELINE - frozen at tag `baseline-broadcast-v1`)
+
+Run `v7` = commit `e3feb3a` (clean tree), `scripts/run_all.sh v7`, scored with the
+human-corrected labels in `data/ground_truth/` (308 labeled athlete instances, 1 frame
+per second, 6 clips). v6 was re-scored on the same labels.
+
+| Clip | labeled frames | identity acc % v6 → v7 | swapped | unknown | non-athlete in slot | missed v6 → v7 |
+|---|---|---|---|---|---|---|
+| 01 | 28 | 85.7 → 89.3 | 0 | 6 | 0 | 2 → 0 |
+| 02 | 37 | 93.2 → 98.6 | 0 | 0 | 1 | 5 → 1 |
+| 03 | 13 | 92.3 → 100 | 0 | 0 | 0 | 2 → 0 |
+| 04 | 15 | 93.3 → 100 | 0 | 0 | 0 | 2 → 0 |
+| 05 | 35 | 94.3 → 97.1 | 0 | 0 | 0 | 4 → 2 |
+| 06 | 26 | 92.3 → 96.2 | 0 | 2 | 0 | 2 → 0 |
+| **all** | 154 | **91.9 → 96.4** | 0 | 8 | 1 | 17 → 3 |
+
+Swapped identities (the worst error) are 0 on every clip. Speed: ~19 fps on this M1
+(yolo11n-pose, imgsz 1280, MPS), offline.
+
+Accuracy is measured on 1 frame/second in 6 short clips from ONE broadcast, so each
+number rests on few frames (a single frame is ~0.3 points overall, ~3-4 points per
+clip). Treat the table as "no known regression", not as a precise accuracy.
+
+### What the remaining 12 non-correct cases are
+- **8 unknown (`?`)**: clip 01 frames 480/503/527 and clip 06 frame 647 - both athletes
+  in a clinch (GT boxes overlap), no usable color evidence. By design the box shows `?`
+  rather than a guess.
+- **2 missed, clip 05 frames 767/791**: the athlete's box exists and passes the filter
+  but no slot holds it. Not investigated.
+- **1 missed + 1 non-athlete, clip 02 frame 192**: the `AO` label in the ground truth
+  is on a seated official (the pipeline rejects that box as seated and its slot goes to
+  the real athlete). This looks like a label that is still wrong - please re-check.
+- `gt_sanity` still flags clip 05 frame 575 (AKA box not redder than AO box); unchecked.
+
+### Known limitations
+- Tuned on 6 clips of one broadcast; anything else (camera, lighting, graphics, belt
+  or gi colors) is untested. Do not read the table as a generalization estimate.
+- Moving camera (clip 06): no tatami calibration, pixel space only; stats/heatmaps are
+  not meaningful there.
+- Clinches: two overlapping people yield one box or merged evidence -> `?` or misses.
+- Identity depends on red/blue belt+glove pixels; at 360p a belt is ~5px thick.
+- `peak_speed` in meters is noisy (homography amplifies jitter) - use avg speed/distance.
+- Ranking now keeps the current slot holder over a bigger newcomer; a wrong holder that
+  stays a valid candidate is not displaced by size alone (it is only dropped when it
+  fails the filters or leaves the mat).
+- Only the first-listed graphic layouts exist in config (YUKO/IPPON panel, Chukoku
+  panel with a yellow card). Other penalty levels (other card colors/positions) are not
+  covered. Seated-person and dark-clothing rejection are tuned on this broadcast.
+- Interactive calibration click-through and the labeling tool's `--flagged`/`c` UI
+  paths were exercised only up to rendering, not by hand.
+
+### What is tuned for this broadcast
+- `config.yaml: classifier.ignore_zones` (pixel rects at 640x360 and their detectors),
+  `graphic_fade_pad_seconds`, `dark_brightness_threshold: 90`.
+- Tatami corners `185,195,460,195,495,335,150,335` for the 5 fixed-camera clips.
+- Color thresholds in `athletes.py` (red/blue hue/sat/val, weak-blue navy band).
+- Identity: `SWITCH_COST`, `SINGLE_DEADZONE`, side-order prior (`identity.py`).
+- Detection: `yolo11n-pose`, `imgsz 1280`, `conf 0.10`, ByteTrack `track_buffer 60`.
+
+### Baseline policy
+Do not tune further on these 6 clips. The next input is a new 1080p video from the
+user's own club: first measure `v7`'s code on it with fresh ground-truth labels
+(`label_ground_truth.py`, `gt_report.py`), compare to this table, and only then change
+anything. Reproduce this baseline: `git checkout baseline-broadcast-v1 && scripts/run_all.sh v7b`.
