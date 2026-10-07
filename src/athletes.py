@@ -179,16 +179,52 @@ def scale_rect(rect, ref_resolution, frame_size):
 
 
 def graphic_on_screen(frame: np.ndarray, only_when: dict, ref_resolution) -> bool:
-    """Broadcast graphics (YUKO/IPPON panel) put a dark text bar at a fixed
-    spot; on a normal frame that spot is bright tatami. True when at least
-    `dark_frac_min` of the pixels in `rect` have V < `dark_val_below`."""
+    """Is a broadcast graphic up? Looks at a small `rect` where the graphic draws
+    something a normal frame never has there, and needs `frac_min` of its pixels
+    to match. Two matchers:
+      dark_val_below: V below this (the dark text bar of the YUKO/IPPON panel);
+      hsv_min/hsv_max: inside this inclusive HSV range (the yellow card swatch of
+        the Chukoku panel).
+    (`dark_frac_min` is the old spelling of `frac_min`.)"""
     h, w = frame.shape[:2]
     x1, y1, x2, y2 = (int(round(v)) for v in scale_rect(only_when["rect"], ref_resolution, (w, h)))
     region = frame[max(y1, 0):min(y2, h), max(x1, 0):min(x2, w)]
     if region.size == 0:
         return False
-    v = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)[:, :, 2]
-    return float((v < only_when["dark_val_below"]).mean()) >= only_when["dark_frac_min"]
+    hsv = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)
+    if "hsv_min" in only_when:
+        match = cv2.inRange(hsv, np.array(only_when["hsv_min"], np.uint8), np.array(only_when["hsv_max"], np.uint8)) > 0
+    else:
+        match = hsv[:, :, 2] < only_when["dark_val_below"]
+    return float(match.mean()) >= only_when.get("frac_min", only_when.get("dark_frac_min"))
+
+
+def zone_flags(frame: np.ndarray, zone_cfgs: list[dict]) -> list[bool]:
+    """Per zone: is its graphic up on THIS frame? Zones without `only_when` are
+    always on."""
+    h, w = frame.shape[:2]
+    return [
+        cfg.get("only_when") is None or graphic_on_screen(frame, cfg["only_when"], cfg.get("ref_resolution", [w, h]))
+        for cfg in zone_cfgs
+    ]
+
+
+def dilate_flags(flags: list[bool], pad: int) -> list[bool]:
+    """True within `pad` frames of any True. Graphics fade in/out: the pictogram
+    figures are on screen a few frames before the marker pixels used to detect the
+    graphic show up (and after they are gone). Offline we can look both ways."""
+    out = [False] * len(flags)
+    for i, v in enumerate(flags):
+        if v:
+            for j in range(max(0, i - pad), min(len(flags), i + pad + 1)):
+                out[j] = True
+    return out
+
+
+def zone_rects(frame_size: tuple[int, int], zone_cfgs: list[dict], on: list[bool]) -> list[tuple[float, float, float, float]]:
+    """Pixel-space ignore rects of the zones switched on."""
+    return [scale_rect(c["rect"], c.get("ref_resolution", list(frame_size)), frame_size)
+            for c, v in zip(zone_cfgs, on) if v]
 
 
 def active_ignore_zones(frame: np.ndarray, zone_cfgs: list[dict]) -> list[tuple[float, float, float, float]]:
@@ -198,14 +234,7 @@ def active_ignore_zones(frame: np.ndarray, zone_cfgs: list[dict]) -> list[tuple[
         always on. With it, the zone applies only while the graphic is up, so
         a real athlete standing there on a clean frame is never dropped."""
     h, w = frame.shape[:2]
-    active = []
-    for cfg in zone_cfgs:
-        ref = cfg.get("ref_resolution", [w, h])
-        only_when = cfg.get("only_when")
-        if only_when is not None and not graphic_on_screen(frame, only_when, ref):
-            continue
-        active.append(scale_rect(cfg["rect"], ref, (w, h)))
-    return active
+    return zone_rects((w, h), zone_cfgs, zone_flags(frame, zone_cfgs))
 
 
 def passes_athlete_filter(
@@ -353,6 +382,12 @@ class AthleteSelector:
         # frames too) instead of only the trailing one.
         self.final_dark_flags: dict[int, list] | None = None
 
+        # Optional {tracker_id: (frames, total_area)} over each track's WHOLE
+        # lifetime from pass 1. Offline, a track that will turn out to be long
+        # enough is eligible from its first frame, not only once it has been seen
+        # min_track_len times (back-fill: no ~10-frame blind spot at track start).
+        self.final_track_stats: dict[int, tuple[int, float]] | None = None
+
         self.id_switch_count = 0
         self.color_swap_count = 0
         self.reassociation_log: list[dict] = []
@@ -405,6 +440,13 @@ class AthleteSelector:
         blue = sum(b for f, _, b in rows if lo <= f <= hi)
         return evidence_score(red, blue)
 
+    def track_len_area(self, t: TrackStats) -> tuple[int, float]:
+        """(frames, avg area) of a track: whole lifetime when known (offline)."""
+        if self.final_track_stats is not None and t.tracker_id in self.final_track_stats:
+            n, total = self.final_track_stats[t.tracker_id]
+            return n, total / max(n, 1)
+        return t.frames_seen, t.avg_area
+
     def _candidate_tracks(self, frame_idx: int, tatami_mask_fn) -> list[TrackStats]:
         # Must be visible AND pass the athlete filter THIS frame - a track
         # that disappeared, sat down, or is a suited official right now
@@ -415,8 +457,8 @@ class AthleteSelector:
             if t.last_seen_frame == frame_idx
             and t.last_passed_filter
             and not self.is_official(t, frame_idx)
-            and t.frames_seen >= self.min_track_len
-            and t.avg_area >= self.min_bbox_area
+            and self.track_len_area(t)[0] >= self.min_track_len
+            and self.track_len_area(t)[1] >= self.min_bbox_area
         ]
         if tatami_mask_fn is not None:
             candidates = [
@@ -432,7 +474,12 @@ class AthleteSelector:
 
     def select_two(self, frame_idx: int, tatami_mask_fn=None):
         candidates = self._candidate_tracks(frame_idx, tatami_mask_fn)
-        candidates.sort(key=lambda t: t.avg_area, reverse=True)
+        # The current slot holders keep their place in the top two: a newcomer
+        # (e.g. a pictogram figure of a broadcast graphic, or a bigger official)
+        # must not push out an athlete who is still a valid candidate. Only the
+        # remaining places are filled by size.
+        holding = {self.slot_to_tracker[AKA], self.slot_to_tracker[AO]} - {None}
+        candidates.sort(key=lambda t: (t.tracker_id not in holding, -self.track_len_area(t)[1]))
         self._assign(frame_idx, candidates[:2])
         self.frame_log.append({
             "frame": frame_idx,

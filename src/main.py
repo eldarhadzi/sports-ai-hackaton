@@ -14,7 +14,7 @@ import yaml
 
 from pose_tracker import PoseTracker, LEFT_ANKLE_IDX, RIGHT_ANKLE_IDX
 from athletes import (
-    AKA, AO, AthleteSelector, TrackStats, active_ignore_zones, classify_belt_color, passes_athlete_filter,
+    AKA, AO, AthleteSelector, TrackStats, classify_belt_color, dilate_flags, passes_athlete_filter, zone_flags, zone_rects,
 )
 from calibration import calibrate_from_click, load_calibration, save_calibration
 from analysis.karate import compute_movement_stats
@@ -263,9 +263,23 @@ def main():
     # per-frame results and per-track cumulative evidence for the whole clip.
     # Pass 2 re-reads the video and runs selection with that full-clip
     # evidence, so AKA/AO is decided from everything seen, not the first frames.
+    # Graphic windows first (cheap, no inference): which frames each ignore zone's
+    # graphic is up, widened by fade_pad_seconds each side.
+    zone_on = [[] for _ in ignore_zone_cfgs]
+    while ignore_zone_cfgs:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        for z, v in zip(zone_on, zone_flags(frame, ignore_zone_cfgs)):
+            z.append(v)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    pad = int(round(classifier_cfg.get("graphic_fade_pad_seconds", 0.5) * fps))
+    zone_on = [dilate_flags(z, pad) for z in zone_on]
+
     cached = []
     track_ev: dict[int, list[tuple[int, float, float]]] = {}
     track_dark: dict[int, list[tuple[int, bool]]] = {}
+    track_stats: dict[int, tuple[int, float]] = {}
     while True:
         ok, frame = cap.read()
         if not ok:
@@ -274,7 +288,7 @@ def main():
 
         detections = tracker.track(frame)
         raw_ground_points = [ground_point_from_detection(d, ankle_conf_threshold) for d in detections]
-        ignore_zones = active_ignore_zones(frame, ignore_zone_cfgs)
+        ignore_zones = zone_rects((width, height), ignore_zone_cfgs, [z[len(cached)] for z in zone_on])
         graphic_frames += bool(ignore_zones)
         filter_results = [
             passes_athlete_filter(frame, d.bbox, d.keypoints, ignore_zones, dark_brightness_threshold)
@@ -283,6 +297,10 @@ def main():
         color_results = [classify_belt_color(frame, d.bbox, d.keypoints) for d in detections]
         for det, (_, _, (red, blue)), (_, reject) in zip(detections, color_results, filter_results):
             if det.tracker_id is not None:
+                n, total = track_stats.get(det.tracker_id, (0, 0.0))
+                track_stats[det.tracker_id] = (
+                    n + 1, total + (det.bbox[2] - det.bbox[0]) * (det.bbox[3] - det.bbox[1]),
+                )
                 track_ev.setdefault(det.tracker_id, []).append((len(cached), red, blue))
                 track_dark.setdefault(det.tracker_id, []).append(
                     (len(cached), bool(reject and reject.startswith("dark_clothing")))
@@ -292,6 +310,7 @@ def main():
             logger.info("Pass 1: %d frames", len(cached))
 
     selector.final_dark_flags = track_dark
+    selector.final_track_stats = track_stats
     officials = sorted(
         tid for tid, flags in track_dark.items()
         if any(selector.is_official(TrackStats(tid, dark_flags=flags), f) for f, _ in flags[::5])

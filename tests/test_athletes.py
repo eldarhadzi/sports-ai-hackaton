@@ -211,3 +211,55 @@ def test_weak_same_sign_candidate_is_still_accepted():
     for frame in range(8, 14):
         feed(selector, frame, dets, [(600, 400), (110, 400)], [PASS, PASS], ["blue", (0.3, 0.2)])
     assert selector.slot_to_tracker[AKA] == 5
+
+
+def test_color_swatch_graphic_detector_chukoku():
+    import yaml
+    from athletes import active_ignore_zones, in_ignore_zone
+    cfg = yaml.safe_load((Path(__file__).resolve().parents[1] / "config.yaml").read_text())
+    zone = next(z for z in cfg["classifier"]["ignore_zones"] if z["name"] == "chukoku_panel")
+    clean = np.full((360, 640, 3), (160, 90, 60), dtype=np.uint8)      # bluish mat
+    up = clean.copy()
+    up[308:326, 404:420] = (0, 220, 255)                                # yellow card (BGR)
+    assert active_ignore_zones(clean, [zone]) == []
+    zones = active_ignore_zones(up, [zone])
+    assert zones == [(395, 238, 535, 332)]
+    assert in_ignore_zone((492, 245, 522, 315), zones)                  # pictogram figure
+
+
+def test_current_slot_holder_is_not_pushed_out_by_a_bigger_newcomer():
+    selector = make_selector()
+    for frame in range(6):
+        dets = [FakeDetection(1, (0, 0, 100, 200)), FakeDetection(2, (500, 0, 600, 200))]
+        feed(selector, frame, dets, [(50, 200), (550, 200)], [PASS, PASS], ["red", "blue"])
+    held = {selector.tracker_to_slot(1), selector.tracker_to_slot(2)}
+    assert held == {AKA, AO}
+    # a larger third figure (graphic pictogram) shows up: size alone would rank it first
+    for frame in range(6, 10):
+        dets = [FakeDetection(1, (0, 0, 100, 200)), FakeDetection(2, (500, 0, 600, 200)),
+                FakeDetection(7, (200, 0, 400, 400))]
+        feed(selector, frame, dets, [(50, 200), (550, 200), (300, 400)], [PASS] * 3, ["red", "blue", "unknown"])
+        assert selector.tracker_to_slot(7) is None
+        assert selector.tracker_to_slot(1) is not None and selector.tracker_to_slot(2) is not None
+
+
+def test_track_is_backfilled_from_its_first_frame_when_lifetime_is_known():
+    def run(final):
+        sel = AthleteSelector(min_track_len=5, min_bbox_area_frac=0.001, reassoc_max_dist_frac=0.5,
+                              frame_width=1000, frame_height=1000)
+        sel.final_track_stats = final
+        first = None
+        for frame in range(8):
+            dets = [FakeDetection(1, (0, 0, 100, 200)), FakeDetection(2, (500, 0, 600, 200))]
+            feed(sel, frame, dets, [(50, 200), (550, 200)], [PASS, PASS], ["red", "blue"])
+            if first is None and sel.tracker_to_slot(1) is not None:
+                first = frame
+        return first
+    assert run(None) == 4                                   # online: only after 5 sightings
+    assert run({1: (8, 8 * 20000.0), 2: (8, 8 * 20000.0)}) == 0
+
+
+def test_graphic_window_is_widened_for_fade_in_and_out():
+    from athletes import dilate_flags
+    assert dilate_flags([False, False, False, True, False, False, False, False], 2) == \
+        [False, True, True, True, True, True, False, False]
