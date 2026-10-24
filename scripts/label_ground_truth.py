@@ -21,10 +21,15 @@ Revisit specific frames (existing labels are pre-loaded, ENTER saves the correct
                                     # from that run. Status bar shows why it was flagged.
   c = show/hide the run's data/<run>/gt_cases/ debug image(s) for this frame (what the
       pipeline did there: GT boxes, slot holders, rejects) - needs gt_cases.py <run>.
-Use pause/zoom in your head: the frame is shown at 2x. Judge by belt/glove color,
-not by position or by what the pipeline thinks.
+Display size: --scale fit (default) makes the frame as large as fits on the screen
+(at most 2x); --scale 1 / 0.5 / 2 sets it directly. Labels are always stored in
+original-frame pixels, whatever the scale.
+Fewer frames: --every 2 labels every 2nd second of the 1 fps grid (frames already
+labeled are kept and still count). Judge by belt/glove color, not by position or by
+what the pipeline thinks.
 """
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
@@ -36,9 +41,27 @@ from analysis.ground_truth import (  # noqa: E402
     gt_path, iou, load_frame_detections, load_gt, sample_frames, sanity_flags, save_gt,
 )
 
-SCALE = 2
+SCALE = 2  # set per clip in label_clip() from --scale
+MAX_FIT_SCALE = 2
 WIN = "ground truth labeling"
 CASE_WIN = "pipeline case (c to close)"
+
+
+def screen_size() -> tuple[int, int]:
+    """Usable screen size in window points (macOS: Finder desktop bounds); 1280x800 if unknown."""
+    try:
+        out = subprocess.run(["osascript", "-e", 'tell application "Finder" to get bounds of window of desktop'],
+                             capture_output=True, text=True, timeout=5).stdout
+        x1, y1, x2, y2 = (int(v) for v in out.split(","))
+        return x2 - x1, y2 - y1
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 1280, 800
+
+
+def fit_scale(frame_w: int, frame_h: int) -> float:
+    """Largest scale (<= MAX_FIT_SCALE) at which the window, incl. title bar/dock margin, fits the screen."""
+    sw, sh = screen_size()
+    return round(min(MAX_FIT_SCALE, (sw - 40) / frame_w, (sh - 120) / frame_h), 2)
 
 
 def numbered_boxes(dets: list[dict]) -> list[dict]:
@@ -79,9 +102,12 @@ def case_images(run: str, clip: str, frame: int) -> list:
     return [cv2.imread(str(p)) for p in sorted((ROOT / "data" / run / "gt_cases").glob(f"{clip}_f{frame:05d}_*.png"))]
 
 
-def label_clip(clip: str, run: str, relabel: bool, frames: list[int] | None = None, reasons: dict | None = None):
+def label_clip(clip: str, run: str, relabel: bool, frames: list[int] | None = None, reasons: dict | None = None,
+               scale: str = "fit", every: int = 1):
     """frames: label exactly these frames (always shown, even if already labeled)
-    instead of the 1 fps grid. reasons: {frame: text} shown in the status bar."""
+    instead of the 1 fps grid. reasons: {frame: text} shown in the status bar.
+    scale: 'fit' or a number. every: keep every Nth second of the 1 fps grid."""
+    global SCALE
     video = ROOT / "videos" / "input" / f"{clip}.mp4"
     jsonl = ROOT / "data" / run / f"{clip}.jsonl"
     if not jsonl.exists():
@@ -89,10 +115,14 @@ def label_clip(clip: str, run: str, relabel: bool, frames: list[int] | None = No
     cap = cv2.VideoCapture(str(video))
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    # decoded size (rotation metadata applied), not the stored size
+    w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    SCALE = fit_scale(w, h) if scale == "fit" else float(scale)
+    print(f"{clip}: {w}x{h} shown at scale {SCALE}")
     dets = load_frame_detections(jsonl)
     path = gt_path(ROOT / "data", clip)
     gt = load_gt(path) or {"clip": clip, "fps": fps, "frames": {}}
-    todo = sample_frames(fps, total) if frames is None else [f for f in frames if 0 <= f < total]
+    todo = sample_frames(fps, total)[::every] if frames is None else [f for f in frames if 0 <= f < total]
     relabel = relabel or frames is not None
     reasons = reasons or {}
     show_case = False
@@ -188,7 +218,13 @@ def main():
     ap.add_argument("--frames", default=None, help="comma-separated frame numbers to (re)label, needs a single --clip")
     ap.add_argument("--flagged", default=None, metavar="RUN", help="(re)label only the frames gt_sanity flags in data/RUN")
     ap.add_argument("--relabel", action="store_true")
+    ap.add_argument("--scale", default="fit", help="display scale: 'fit' (default, fits the screen, max 2x) or a number, e.g. 1 or 0.5")
+    ap.add_argument("--every", type=int, default=1, metavar="N", help="label only every Nth second of the 1 fps grid")
     args = ap.parse_args()
+    if args.scale != "fit" and not _is_positive_float(args.scale):
+        sys.exit("--scale must be 'fit' or a positive number")
+    if args.every < 1:
+        sys.exit("--every must be >= 1")
     clips = sorted(p.stem for p in (ROOT / "videos" / "input").glob("*.mp4")) if args.clip == "all" else [args.clip]
     if args.frames and (args.clip == "all" or args.flagged):
         sys.exit("--frames needs a single --clip and cannot be combined with --flagged")
@@ -207,9 +243,16 @@ def main():
                 print(f"{c}: nothing flagged in {run}")
                 continue
             frames, reasons = [f for f, _ in flagged], dict(flagged)
-        if not label_clip(c, run, args.relabel, frames, reasons):
+        if not label_clip(c, run, args.relabel, frames, reasons, args.scale, args.every):
             break
     cv2.destroyAllWindows()
+
+
+def _is_positive_float(s: str) -> bool:
+    try:
+        return float(s) > 0
+    except ValueError:
+        return False
 
 
 if __name__ == "__main__":
