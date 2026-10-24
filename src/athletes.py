@@ -447,7 +447,7 @@ class AthleteSelector:
             return n, total / max(n, 1)
         return t.frames_seen, t.avg_area
 
-    def _candidate_tracks(self, frame_idx: int, tatami_mask_fn) -> list[TrackStats]:
+    def _candidate_tracks(self, frame_idx: int, tatami_mask_fn, allowed_ids: set | None = None) -> list[TrackStats]:
         # Must be visible AND pass the athlete filter THIS frame - a track
         # that disappeared, sat down, or is a suited official right now
         # should not keep winning selection just because it was big/
@@ -459,6 +459,7 @@ class AthleteSelector:
             and not self.is_official(t, frame_idx)
             and self.track_len_area(t)[0] >= self.min_track_len
             and self.track_len_area(t)[1] >= self.min_bbox_area
+            and (allowed_ids is None or t.tracker_id in allowed_ids)
         ]
         if tatami_mask_fn is not None:
             candidates = [
@@ -472,8 +473,10 @@ class AthleteSelector:
                 )
         return candidates
 
-    def select_two(self, frame_idx: int, tatami_mask_fn=None):
-        candidates = self._candidate_tracks(frame_idx, tatami_mask_fn)
+    def select_two(self, frame_idx: int, tatami_mask_fn=None, allowed_ids: set | None = None):
+        """allowed_ids: if given, only these tracks may be candidates this frame
+        (e.g. the ones standing on the active mat region)."""
+        candidates = self._candidate_tracks(frame_idx, tatami_mask_fn, allowed_ids)
         # The current slot holders keep their place in the top two: a newcomer
         # (e.g. a pictogram figure of a broadcast graphic, or a bigger official)
         # must not push out an athlete who is still a valid candidate. Only the
