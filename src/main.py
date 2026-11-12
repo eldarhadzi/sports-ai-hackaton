@@ -14,7 +14,8 @@ import yaml
 
 from pose_tracker import PoseTracker, LEFT_ANKLE_IDX, RIGHT_ANKLE_IDX, det_cache_path, load_det_cache, save_det_cache
 from athletes import (
-    AKA, AO, AthleteSelector, TrackStats, classify_belt_color, dilate_flags, passes_athlete_filter, zone_flags, zone_rects,
+    AKA, AO, AthleteSelector, TrackStats, classify_belt_color, dilate_flags, glove_evidence, leg_brightness,
+    passes_athlete_filter, zone_flags, zone_rects,
 )
 from calibration import calibrate_from_click, load_calibration, save_calibration
 from mat_region import FrameRegistrar, MatRegion, load_mat, mat_path
@@ -156,6 +157,7 @@ def build_provenance(config: dict, args, device: str) -> dict:
             "color_identity": "offline per-frame pair signal + Viterbi orientation over the whole clip",
             "trail_breaking_px": config["visualization"]["trail_break_dist_px"],
             "debug_rendering (grey boxes for non-athletes)": bool(args.debug),
+            "leg_official": config["classifier"].get("leg_official") or None,
             "identity_side_prior": bool(config.get("identity", {}).get("side_prior", True) and not args.no_side_prior),
             "color_debug_strips": bool(args.debug or args.debug_strips),
         },
@@ -315,6 +317,10 @@ def main():
     track_ev: dict[int, list[tuple[int, float, float]]] = {}
     track_dark: dict[int, list[tuple[int, bool]]] = {}
     track_stats: dict[int, tuple[int, float]] = {}
+    # Lower-body official verdict (v8 step 2): per detection leg brightness + glove evidence.
+    leg_cfg = classifier_cfg.get("leg_official") or {}
+    track_legs: dict[int, list[tuple[int, float | None, float | None]]] = {}
+    leg_results = []
     while True:
         ok, frame = cap.read()
         if not ok:
@@ -332,6 +338,14 @@ def main():
             for d in detections
         ]
         color_results = [classify_belt_color(frame, d.bbox, d.keypoints) for d in detections]
+        legs = [
+            (leg_brightness(frame, d.keypoints, d.bbox), glove_evidence(frame, d.keypoints, d.bbox))
+            if leg_cfg.get("enabled") else (None, None) for d in detections
+        ]
+        leg_results.append(legs)
+        for det, (leg_v, glove) in zip(detections, legs):
+            if det.tracker_id is not None and leg_cfg.get("enabled"):
+                track_legs.setdefault(det.tracker_id, []).append((len(cached), leg_v, glove))
         for det, (_, _, (red, blue)), (_, reject) in zip(detections, color_results, filter_results):
             if det.tracker_id is not None:
                 n, total = track_stats.get(det.tracker_id, (0, 0.0))
@@ -364,11 +378,15 @@ def main():
 
     selector.final_dark_flags = track_dark
     selector.final_track_stats = track_stats
+    if leg_cfg.get("enabled"):
+        selector.final_legs = track_legs
+        selector.leg_dark = leg_cfg["dark_brightness"]
+        selector.leg_window = max(1, int(round(leg_cfg["window_seconds"] * fps)))
     officials = sorted(
         tid for tid, flags in track_dark.items()
         if any(selector.is_official(TrackStats(tid, dark_flags=flags), f) for f, _ in flags[::5])
     )
-    logger.info("Ignore-zone graphic on screen in %d/%d frames; tracks judged an official (dark clothing) at some point: %s",
+    logger.info("Ignore-zone graphic on screen in %d/%d frames; tracks judged an official (dark torso or dark legs) at some point: %s",
                 graphic_frames, len(cached), officials)
     selector.final_ev = track_ev
     logger.info(
@@ -437,8 +455,9 @@ def main():
         slot_points = {AKA: None, AO: None}
         det_styles = {}
 
-        for det, slot, raw_gp, smoothed_gp, (passed, reject_reason), (color, color_samples, color_ev) in zip(
+        for det, slot, raw_gp, smoothed_gp, (passed, reject_reason), (color, color_samples, color_ev), (leg_v, glove) in zip(
             detections, slot_of_det, raw_ground_points, smoothed_points, filter_results, color_results,
+            leg_results[frame_idx],
         ):
             athlete = label_of(slot)
             tatami_point = None
@@ -476,6 +495,12 @@ def main():
                 "passed_athlete_filter": passed,
                 "reject_reason": reject_reason,
                 "on_mat": None if mat_region is None else mat_region.on_mat(frame_idx, raw_gp, det.bbox, height),
+                "leg_brightness": None if leg_v is None else round(leg_v, 1),
+                "glove": None if glove is None else round(glove, 3),
+                "official": (
+                    selector.is_official(TrackStats(det.tracker_id, dark_flags=track_dark.get(det.tracker_id, [])), frame_idx)
+                    if det.tracker_id is not None else None
+                ),
             }
             jsonl.write(record)
             if athlete is not None:

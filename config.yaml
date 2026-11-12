@@ -54,6 +54,14 @@ classifier:
   # Mean V-channel brightness of the shoulder-to-hip torso region below this
   # is treated as a dark suit jacket (referee/coach), not a white gi.
   dark_brightness_threshold: 90
+  # Official (referee/judge) verdict from the LOWER body, per track over a window of
+  # +-window_seconds: dark trousers (median leg V < dark_brightness) in most measured
+  # frames and red/blue gloves (almost) never seen. Catches a white-shirted referee
+  # that passes the torso check above. Thresholds: see athletes.py (LEG_*, GLOVE_*).
+  leg_official:
+    enabled: true
+    dark_brightness: 100
+    window_seconds: 0.5
   # Broadcast-graphic zones: a detection mostly (>=50% of its box) inside a
   # zone is dropped. Coordinates are given at ref_resolution and scaled to the
   # real video size. `only_when` makes the zone conditional: it applies only
