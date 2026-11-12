@@ -106,7 +106,7 @@ zoom and in pixel space. Each threshold is in `DEFAULTS` at the top of the file.
 git clone git@github.com:eldarhadzi/sports-ai-hackaton.git && cd sports-ai-hackaton
 python -m venv .venv                       # Python 3.11-3.13 tested (3.13 on Windows)
 .venv\Scripts\pip install -r requirements.txt      # Mac/Linux: .venv/bin/pip
-.venv\Scripts\python -m pytest tests -q            # expect 40 passed
+.venv\Scripts\python -m pytest tests -q            # expect 52 passed
 ```
 
 **Data:** `videos/`, `data/`, `models/` and `*.pt` are git-ignored by default (README "Data &
@@ -232,7 +232,7 @@ itself hasn't been run yet (no API key on the dev laptop).
 
 ## 6. What is DONE (file by file)
 
-### Before this hackathon session (rounds 1-8, see README for details and measured history)
+### Before this hackathon session (rounds 1-8, see docs/DEVELOPMENT_LOG.md for details and measured history)
 | File | What |
 |---|---|
 | `src/pose_tracker.py` | YOLO pose + ByteTrack wrapper, device auto (cuda→mps→cpu), detection cache |
