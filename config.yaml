@@ -54,12 +54,22 @@ classifier:
   # Mean V-channel brightness of the shoulder-to-hip torso region below this
   # is treated as a dark suit jacket (referee/coach), not a white gi.
   dark_brightness_threshold: 90
-  # Pixel rects [x1,y1,x2,y2] where a detection mostly inside is dropped -
-  # for broadcast score/technique overlays (e.g. "IPPON"/"YUKO" panels) that
-  # can get detected as a person. Empty by default: get exact coordinates
-  # from a real occurrence before guessing, since a wrong guess can just as
-  # easily hide a real athlete standing near the mat edge.
-  ignore_zones: []
+  # Broadcast-graphic zones: a detection mostly (>=50% of its box) inside a
+  # zone is dropped. Coordinates are given at ref_resolution and scaled to the
+  # real video size. `only_when` makes the zone conditional: it applies only
+  # on frames where the graphic is really up (>= dark_frac_min of the pixels
+  # in `rect` have V < dark_val_below - the dark text bar), because real
+  # athletes do stand in that area of the tatami when no graphic is shown.
+  # Measured on the 6 clips (640x360): graphic up -> dark fraction 0.43-0.45,
+  # no graphic -> 0.00, clip 06 never above 0.01.
+  ignore_zones:
+    - name: yuko_ippon_panel
+      ref_resolution: [640, 360]
+      rect: [220, 235, 420, 340]       # panel incl. the two pictogram figures
+      only_when:
+        rect: [260, 315, 380, 335]     # dark text bar ("YUKO"/"IPPON")
+        dark_val_below: 70
+        dark_frac_min: 0.25
 
 ground_point:
   # Ankle keypoint confidence needed to use ankle midpoint as ground point;
