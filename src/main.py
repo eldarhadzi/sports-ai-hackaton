@@ -17,6 +17,7 @@ from athletes import (
     AKA, AO, AthleteSelector, TrackStats, classify_belt_color, dilate_flags, passes_athlete_filter, zone_flags, zone_rects,
 )
 from calibration import calibrate_from_click, load_calibration, save_calibration
+from mat_region import FrameRegistrar, MatRegion, load_mat, mat_path
 from analysis.karate import compute_movement_stats
 from analysis.metrics import compute_clip_metrics
 from identity import label_orientation, pair_signal, side_order
@@ -217,6 +218,23 @@ def main():
         )
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
+    # Optional active mat region (data/mats/<clip>.json, scripts/mark_mat.py): only
+    # people standing on that mat can hold a slot. Follows a moving camera.
+    mat_file = mat_path(Path(config["export"]["data_dir"]), input_path.stem)
+    mat = load_mat(mat_file)
+    mat_region = registrar = None
+    if mat is not None:
+        if list(mat["frame_size"]) != [width, height]:
+            raise RuntimeError(f"{mat_file} was marked on a {mat['frame_size']} frame, video is {width}x{height}")
+        cap.set(cv2.CAP_PROP_POS_FRAMES, mat["frame"])
+        ok, ref_frame = cap.read()
+        if not ok:
+            raise RuntimeError(f"Could not read mat reference frame {mat['frame']}")
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        registrar = FrameRegistrar(ref_frame)
+        mat_region = MatRegion(mat["corners"], config.get("mat", {}).get("margin", 0.1))
+        logger.info("Mat region: %s (reference frame %d, margin %.2f)", mat_file, mat["frame"], mat_region.margin)
+
     cache_path = det_cache_path(
         args.det_cache, input_path, config["model"]["name"], config["model"].get("conf", 0.25),
         config["model"].get("imgsz", 640), config.get("tracker", "bytetrack.yaml"),
@@ -235,6 +253,7 @@ def main():
 
     provenance = build_provenance(config, args, device)
     provenance["det_cache"] = str(cache_path) if cached_dets is not None else None
+    provenance["active_features"]["mat_region"] = str(mat_file) if mat is not None else None
     logger.info("RUN PROVENANCE: %s", json.dumps(provenance, indent=2))
 
     selector = AthleteSelector(
@@ -303,6 +322,8 @@ def main():
         last_frame = frame
 
         detections = cached_dets[len(cached)] if cached_dets is not None else tracker.track(frame)
+        if mat_region is not None:
+            mat_region.add_frame(registrar.to_ref(frame))
         raw_ground_points = [ground_point_from_detection(d, ankle_conf_threshold) for d in detections]
         ignore_zones = zone_rects((width, height), ignore_zone_cfgs, [z[len(cached)] for z in zone_on])
         graphic_frames += bool(ignore_zones)
@@ -330,6 +351,17 @@ def main():
         save_det_cache(cache_path, [c[0] for c in cached])
         logger.info("Detection cache: saved %s", cache_path)
 
+    if mat_region is not None:
+        logger.info("Mat region: %d/%d frames could not be registered to the reference frame (kept the last good transform)",
+                    registrar.failed_frames, len(cached))
+
+    def on_mat_ids(t):
+        """Tracks standing on the active mat region at frame t (None = no region)."""
+        if mat_region is None:
+            return None
+        dets, gps = cached[t][0], cached[t][1]
+        return {d.tracker_id for d, gp in zip(dets, gps) if mat_region.on_mat(t, gp, d.bbox, height)}
+
     selector.final_dark_flags = track_dark
     selector.final_track_stats = track_stats
     officials = sorted(
@@ -353,7 +385,7 @@ def main():
     for t, (detections, raw_ground_points, filter_results, color_results) in enumerate(cached):
         evidence = [ev for _, _, ev in color_results]
         selector.update_track_stats(t, detections, raw_ground_points, filter_results, evidence)
-        selector.select_two(t, tatami_mask_fn=tatami_mask_fn)
+        selector.select_two(t, tatami_mask_fn=tatami_mask_fn, allowed_ids=on_mat_ids(t))
 
         slot_of_det = [selector.tracker_to_slot(d.tracker_id) for d in detections]
         smoothed = list(raw_ground_points)
@@ -443,6 +475,7 @@ def main():
                 "identity_known": known if slot is not None else None,
                 "passed_athlete_filter": passed,
                 "reject_reason": reject_reason,
+                "on_mat": None if mat_region is None else mat_region.on_mat(frame_idx, raw_gp, det.bbox, height),
             }
             jsonl.write(record)
             if athlete is not None:
@@ -459,6 +492,8 @@ def main():
             frame, detections, det_styles, trail_styles, trails, visible_slots,
             config["visualization"], debug=args.debug,
         )
+        if mat_region is not None:
+            cv2.polylines(annotated, [mat_region.polygon(frame_idx).astype("int32")], True, (0, 200, 200), 1)
         writer.write(annotated)
 
         frame_idx += 1
@@ -491,6 +526,10 @@ def main():
         "color_swap_count": selector.color_swap_count,
         "reassociation_log": selector.reassociation_log,
         "calibrated": calibration is not None,
+        "mat_region": None if mat is None else {
+            "file": str(mat_file), "reference_frame": mat["frame"], "corners": mat["corners"],
+            "margin": mat_region.margin, "unregistered_frames": registrar.failed_frames,
+        },
     })
 
     logger.info(

@@ -89,6 +89,12 @@ classifier:
         hsv_max: [38, 255, 255]
         frac_min: 0.4
 
+mat:
+  # Active mat region (data/mats/<clip>.json from scripts/mark_mat.py; clips without
+  # a file are unaffected). Ground points up to this fraction of the mat's size
+  # outside its edges still count as on the mat (0.1 of an 8 m mat ~ 0.8 m).
+  margin: 0.1
+
 ground_point:
   # Ankle keypoint confidence needed to use ankle midpoint as ground point;
   # otherwise falls back to bbox bottom-center.
