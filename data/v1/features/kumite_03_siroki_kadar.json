@@ -22,6 +22,9 @@
     "punches": 2,
     "kicks": 0,
     "advances": 1,
+    "reached": 0,
+    "reach_known": 2,
+    "knee_raises": 0,
     "exchanges_initiated": 1,
     "exchanges_total": 2
    },
@@ -31,16 +34,21 @@
      "t": 10.26,
      "type": "punch",
      "limb": "left_hand",
-     "speed": 6.4
+     "speed": 6.4,
+     "reach": 1.68,
+     "reached": false
     },
     {
      "frame": 302,
      "t": 12.6,
      "type": "punch",
      "limb": "right_hand",
-     "speed": 7.1
+     "speed": 7.1,
+     "reach": 1.59,
+     "reached": false
     }
    ],
+   "knee_raises": [],
    "timeline": [
     {
      "t": 0.0,
@@ -190,6 +198,9 @@
     "punches": 3,
     "kicks": 0,
     "advances": 2,
+    "reached": 0,
+    "reach_known": 3,
+    "knee_raises": 0,
     "exchanges_initiated": 1,
     "exchanges_total": 2
    },
@@ -199,23 +210,30 @@
      "t": 9.55,
      "type": "punch",
      "limb": "right_hand",
-     "speed": 12.7
+     "speed": 12.7,
+     "reach": 1.33,
+     "reached": false
     },
     {
      "frame": 238,
      "t": 9.93,
      "type": "punch",
      "limb": "left_hand",
-     "speed": 7.8
+     "speed": 7.8,
+     "reach": 1.77,
+     "reached": false
     },
     {
      "frame": 247,
      "t": 10.3,
      "type": "punch",
      "limb": "right_hand",
-     "speed": 9.5
+     "speed": 9.5,
+     "reach": 1.76,
+     "reached": false
     }
    ],
+   "knee_raises": [],
    "timeline": [
     {
      "t": 0.0,
@@ -390,7 +408,10 @@
   "idle_window_s": 1.0,
   "idle_speed": 1.0,
   "idle_dist": 4.0,
-  "id_jump_mask_s": 0.1
+  "id_jump_mask_s": 0.1,
+  "reach_thr": 0.5,
+  "knee_raise_min_s": 0.12,
+  "knee_raise_quiet_s": 0.3
  },
  "clip": "kumite_03_siroki_kadar"
 }

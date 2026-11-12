@@ -10,7 +10,16 @@ Definitions (heuristics - tune DEFAULTS against a hand count):
   strike         a wrist (punch) or ankle (kick) speed peak relative to the athlete's own hips,
                  fast enough, with the arm extended / the foot raised, moving toward the
                  opponent, while the two athletes are within striking range. One strike per
-                 athlete per `refractory_s`.
+                 athlete per `refractory_s`. The type comes from the limb that struck (hand =
+                 punch, foot = kick); a raised knee never turns a hand strike into a kick.
+  reach          per strike: closest 2D distance (torso units) from the striking wrist/ankle to
+                 the opponent's head/shoulders/hips around the peak. `reached` = reach <= reach_thr.
+                 A proxy, NOT contact: depth is invisible in 2D, and a far-side arm hidden behind
+                 the body reads as "not reached" (FRA's yuko punch, clip 02 18.8 s: reach 1.04).
+                 A low reach is a trustworthy "got there"; a high one is not proof of a miss.
+  knee raise     knee chambered / ankle up for >= knee_raise_min_s, in range, with no strike of
+                 the same athlete within +-knee_raise_quiet_s: a possible feint. Not a strike and
+                 not part of any metric.
   advance        the athlete moves toward the opponent faster than `advance_speed` for at least
                  `advance_min_s`.
   exchange       a cluster of strikes (either athlete) with gaps <= `exchange_gap_s`.
@@ -72,7 +81,13 @@ DEFAULTS = {
     "idle_speed": 1.0,         # torso/s, both athletes' hip speeds summed
     "idle_dist": 4.0,          # torso units apart
     "id_jump_mask_s": 0.1,     # ignore limb speed around a tracker-id change (it's a jump, not a strike)
+    "reach_thr": 0.5,          # torso units: limb tip this close to the opponent's head/shoulders/hips = reached
+    "knee_raise_min_s": 0.12,  # knee chambered at least this long to count as a knee raise
+    "knee_raise_quiet_s": 0.3, # ...and no strike by the same athlete within +-this (else it was part of that strike)
 }
+
+# Opponent target points for "reach": nose, shoulders, hips (COCO indices).
+TARGETS = (0, 5, 6, 11, 12)
 
 
 # ---------------------------------------------------------------- loading
@@ -188,10 +203,23 @@ def body_signals(d: dict, fps: float, cfg: dict) -> dict:
     return {"hip": hip_s, "scale": scale, "present": ~np.isnan(hip_s[:, 0]) & ~np.isnan(scale)}
 
 
-def detect_strikes(d, me, opp, fps, cfg, toward, dist, paused):
+def _reach(tip: np.ndarray, opp_kp: np.ndarray, conf: float, scale: np.ndarray, t: int, win: int) -> float | None:
+    """Closest 2D distance (own torso units) from a limb tip to the opponent's head/shoulders/hips
+    around frame t. It's a proxy: depth is invisible in 2D, so "reached" never means "made contact"."""
+    sl = slice(max(0, t - win), t + win + 1)
+    tg = np.stack([_pt(opp_kp[sl], i, conf) for i in TARGETS], axis=1)  # (w, 5, 2)
+    d = _norm(tg - tip[sl][:, None, :]) / scale[sl][:, None]
+    return None if np.isnan(d).all() else round(float(np.nanmin(d)), 2)
+
+
+def detect_strikes(d, me, opp_d, fps, cfg, toward, dist, paused):
+    """Strikes of one athlete. The type comes from the limb that struck (hand = punch, foot = kick).
+
+    `opp_d` is the opponent's raw arrays (for reach). Returns (strikes, knee_raises)."""
     kp, c = d["kp"], cfg["kp_conf"]
     T = len(kp)
-    # leg raised (either knee chambered or either ankle up) -> whatever limb peaked, it's a kick
+    # leg raised (knee chambered or ankle up). Used only for knee raises below; it does NOT turn a hand
+    # strike into a kick (a lunge punch lifts the knee too, e.g. FRA's yuko, clip 02 at 18.8 s).
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         knee_h = np.nanmax(np.stack([(me["hip"][:, 1] - _pt(kp, k, c)[:, 1]) / me["scale"] for k in (L_KN, R_KN)]), axis=0)
@@ -238,9 +266,10 @@ def detect_strikes(d, me, opp, fps, cfg, toward, dist, paused):
             delta = cfg["punch_delta"] if kind == "punch" else cfg["kick_delta"]
             if not (sh_max >= shape_ok) or not (sh_max - sh_min >= delta):
                 continue
-            kicked = bool(leg_up[t - win: t + win + 1].any())
-            cands.append({"frame": t, "t": round(t / fps, 2), "type": "kick" if kicked else kind, "limb": limb,
-                          "speed": round(float(s[t]), 1)})
+            reach = _reach(tip, opp_d["kp"], c, me["scale"], t, win)
+            cands.append({"frame": t, "t": round(t / fps, 2), "type": kind, "limb": limb,
+                          "speed": round(float(s[t]), 1), "reach": reach,
+                          "reached": None if reach is None else bool(reach <= cfg["reach_thr"])})
     cands.sort(key=lambda e: e["frame"])
     strikes, last = [], -1e9
     ref = cfg["refractory_s"] * fps
@@ -250,7 +279,21 @@ def detect_strikes(d, me, opp, fps, cfg, toward, dist, paused):
             last = e["frame"]
         elif e["speed"] > strikes[-1]["speed"]:
             strikes[-1] = e  # same action seen on two limbs: keep the stronger read
-    return strikes
+
+    # knee raises: knee/ankle up for a moment, in range, live, with no strike of this athlete around it.
+    # A possible feint or a chambered kick that never came - not a strike, not counted in any metric.
+    quiet = cfg["knee_raise_quiet_s"] * fps
+    knee_raises = []
+    for s0, e0 in _runs(leg_up & ~paused):
+        if e0 - s0 < cfg["knee_raise_min_s"] * fps:
+            continue
+        mid_f = (s0 + e0 - 1) // 2
+        if not (cfg["min_range"] <= np.nan_to_num(dist[mid_f], nan=-1) <= cfg["max_range"]):
+            continue
+        if any(s0 - quiet <= e["frame"] <= e0 - 1 + quiet for e in strikes):
+            continue
+        knee_raises.append({"frame": int(s0), "t": round(s0 / fps, 2), "duration_s": round((e0 - s0) / fps, 2)})
+    return strikes, knee_raises
 
 
 def analyze_bout(bout: dict, cfg: dict | None = None) -> dict:
@@ -280,8 +323,10 @@ def analyze_bout(bout: dict, cfg: dict | None = None) -> dict:
     res = {"T": T, "fps": fps, "duration_s": round(T / fps, 2), "active_s": round(both.sum() / fps, 2),
            "paused_s": round(float(graphic.sum() / fps), 2), "idle_s": round(float((idle & ~graphic).sum() / fps), 2),
            "athletes": {}, "exchanges": [], "config": cfg}
-    strikes = {a: detect_strikes(bout[a], sig[a], sig[a if a == AO else AO], fps, cfg, toward[a], dist, paused)
-               for a in (AKA, AO)}
+    detected = {a: detect_strikes(bout[a], sig[a], bout[AO if a == AKA else AKA], fps, cfg, toward[a], dist, paused)
+                for a in (AKA, AO)}
+    strikes = {a: detected[a][0] for a in (AKA, AO)}
+    knee_raises = {a: detected[a][1] for a in (AKA, AO)}
 
     advances = {}
     for a in (AKA, AO):
@@ -355,10 +400,14 @@ def analyze_bout(bout: dict, cfg: dict | None = None) -> dict:
             "counts": {
                 "strikes": n_str, "punches": sum(e["type"] == "punch" for e in strikes[a]),
                 "kicks": sum(e["type"] == "kick" for e in strikes[a]), "advances": n_adv,
+                "reached": sum(bool(e["reached"]) for e in strikes[a]),
+                "reach_known": sum(e["reached"] is not None for e in strikes[a]),
+                "knee_raises": len(knee_raises[a]),
                 "exchanges_initiated": sum(x["initiator"] == a for x in known_ex),
                 "exchanges_total": len(res["exchanges"]),
             },
             "events": strikes[a],
+            "knee_raises": knee_raises[a],
             "timeline": timeline,
         }
     return res

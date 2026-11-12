@@ -19,9 +19,12 @@
    },
    "counts": {
     "strikes": 1,
-    "punches": 0,
-    "kicks": 1,
+    "punches": 1,
+    "kicks": 0,
     "advances": 2,
+    "reached": 0,
+    "reach_known": 1,
+    "knee_raises": 0,
     "exchanges_initiated": 2,
     "exchanges_total": 7
    },
@@ -29,11 +32,14 @@
     {
      "frame": 451,
      "t": 18.81,
-     "type": "kick",
+     "type": "punch",
      "limb": "left_hand",
-     "speed": 6.6
+     "speed": 6.6,
+     "reach": 1.04,
+     "reached": false
     }
    ],
+   "knee_raises": [],
    "timeline": [
     {
      "t": 0.0,
@@ -415,9 +421,12 @@
    },
    "counts": {
     "strikes": 10,
-    "punches": 9,
-    "kicks": 1,
+    "punches": 10,
+    "kicks": 0,
     "advances": 6,
+    "reached": 2,
+    "reach_known": 10,
+    "knee_raises": 0,
     "exchanges_initiated": 5,
     "exchanges_total": 7
    },
@@ -427,72 +436,93 @@
      "t": 7.84,
      "type": "punch",
      "limb": "right_hand",
-     "speed": 12.1
+     "speed": 12.1,
+     "reach": 1.89,
+     "reached": false
     },
     {
      "frame": 261,
      "t": 10.89,
-     "type": "kick",
+     "type": "punch",
      "limb": "left_hand",
-     "speed": 13.8
+     "speed": 13.8,
+     "reach": 1.23,
+     "reached": false
     },
     {
      "frame": 314,
      "t": 13.1,
      "type": "punch",
      "limb": "right_hand",
-     "speed": 5.7
+     "speed": 5.7,
+     "reach": 1.63,
+     "reached": false
     },
     {
      "frame": 330,
      "t": 13.76,
      "type": "punch",
      "limb": "left_hand",
-     "speed": 13.4
+     "speed": 13.4,
+     "reach": 1.66,
+     "reached": false
     },
     {
      "frame": 451,
      "t": 18.81,
      "type": "punch",
      "limb": "right_hand",
-     "speed": 13.6
+     "speed": 13.6,
+     "reach": 0.31,
+     "reached": true
     },
     {
      "frame": 480,
      "t": 20.02,
      "type": "punch",
      "limb": "right_hand",
-     "speed": 7.1
+     "speed": 7.1,
+     "reach": 4.98,
+     "reached": false
     },
     {
      "frame": 733,
      "t": 30.57,
      "type": "punch",
      "limb": "left_hand",
-     "speed": 12.4
+     "speed": 12.4,
+     "reach": 1.02,
+     "reached": false
     },
     {
      "frame": 790,
      "t": 32.95,
      "type": "punch",
      "limb": "right_hand",
-     "speed": 10.7
+     "speed": 10.7,
+     "reach": 1.35,
+     "reached": false
     },
     {
      "frame": 809,
      "t": 33.74,
      "type": "punch",
      "limb": "right_hand",
-     "speed": 9.0
+     "speed": 9.0,
+     "reach": 0.73,
+     "reached": false
     },
     {
      "frame": 821,
      "t": 34.24,
      "type": "punch",
      "limb": "right_hand",
-     "speed": 7.2
+     "speed": 7.2,
+     "reach": 0.42,
+     "reached": true
     }
    ],
+   "knee_raises": [],
    "timeline": [
     {
      "t": 0.0,
@@ -932,7 +962,10 @@
   "idle_window_s": 1.0,
   "idle_speed": 1.0,
   "idle_dist": 4.0,
-  "id_jump_mask_s": 0.1
+  "id_jump_mask_s": 0.1,
+  "reach_thr": 0.5,
+  "knee_raise_min_s": 0.12,
+  "knee_raise_quiet_s": 0.3
  },
  "clip": "kumite_02_siroki_kadar"
 }

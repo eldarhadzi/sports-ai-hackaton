@@ -73,11 +73,13 @@ def build(run_dir: Path, roster_path: Path) -> list[dict]:
         pf, pa = sum(b[0] for b in bouts.values()), sum(b[1] for b in bouts.values())
 
         # timeline: clips concatenated in roster order, times offset so they don't overlap
-        timeline, events, offset = [], [], 0.0
+        timeline, events, knee_raises, offset = [], [], [], 0.0
         clips = []
         for r, f, a in items:
             timeline += [{**p, "t": round(p["t"] + offset, 2), "clip": r["clip"]} for p in a["timeline"]]
             events += [{**e, "t": round(e["t"] + offset, 2), "clip": r["clip"], "clip_t": e["t"]} for e in a["events"]]
+            knee_raises += [{**e, "t": round(e["t"] + offset, 2), "clip": r["clip"], "clip_t": e["t"]}
+                            for e in a.get("knee_raises", [])]
             clips.append({"clip": r["clip"], "slot": r["slot"], "offset": round(offset, 2),
                           "duration_s": f["duration_s"], "active_s": f["active_s"],
                           "metrics": a["metrics"], "counts": a["counts"], "reliability": a["reliability"]})
@@ -88,11 +90,12 @@ def build(run_dir: Path, roster_path: Path) -> list[dict]:
             "age_group": row0.get("age_group") or "unknown", "belt": row0.get("belt") or "unknown",
             "n_bouts": len(bouts), "n_clips": len(items), "active_s": round(sum(active), 1),
             "reliability": rel, "metrics": m,
-            "counts": {k: sum(a["counts"][k] for _, _, a in items)
-                       for k in ("strikes", "punches", "kicks", "advances", "exchanges_initiated")},
+            "counts": {k: sum(a["counts"].get(k, 0) for _, _, a in items)
+                       for k in ("strikes", "punches", "kicks", "advances", "exchanges_initiated",
+                                 "reached", "reach_known", "knee_raises")},
             "points_for": pf, "points_against": pa,
             "_points_share": pf / (pf + pa) if (pf + pa) else None,
-            "timeline": timeline, "events": events, "clips": clips,
+            "timeline": timeline, "events": events, "knee_raises": knee_raises, "clips": clips,
         })
 
     # cohort percentiles

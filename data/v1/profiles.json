@@ -21,10 +21,13 @@
   "active_s": 55.8,
   "counts": {
    "strikes": 12,
-   "punches": 11,
-   "kicks": 1,
+   "punches": 12,
+   "kicks": 0,
    "advances": 8,
-   "exchanges_initiated": 8
+   "exchanges_initiated": 8,
+   "reached": 0,
+   "reach_known": 12,
+   "knee_raises": 0
   },
   "points_for": 4.0,
   "points_against": 0.0,
@@ -967,6 +970,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 6.5,
+    "reach": 1.23,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 0.21
    },
@@ -976,6 +981,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 6.0,
+    "reach": 1.59,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 0.88
    },
@@ -985,6 +992,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 6.8,
+    "reach": 1.21,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 5.96
    },
@@ -994,6 +1003,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 6.4,
+    "reach": 1.24,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 6.92
    },
@@ -1003,6 +1014,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 6.8,
+    "reach": 1.04,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 10.68
    },
@@ -1012,6 +1025,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 5.8,
+    "reach": 2.43,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 17.43
    },
@@ -1021,6 +1036,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 5.2,
+    "reach": 1.99,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 18.18
    },
@@ -1030,6 +1047,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 9.2,
+    "reach": 0.92,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 24.65
    },
@@ -1039,15 +1058,19 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 5.7,
+    "reach": 1.57,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 27.4
    },
    {
     "frame": 451,
     "t": 46.55,
-    "type": "kick",
+    "type": "punch",
     "limb": "left_hand",
     "speed": 6.6,
+    "reach": 1.04,
+    "reached": false,
     "clip": "kumite_02_siroki_kadar",
     "clip_t": 18.81
    },
@@ -1057,6 +1080,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 6.4,
+    "reach": 1.68,
+    "reached": false,
     "clip": "kumite_03_siroki_kadar",
     "clip_t": 10.26
    },
@@ -1066,10 +1091,13 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 7.1,
+    "reach": 1.59,
+    "reached": false,
     "clip": "kumite_03_siroki_kadar",
     "clip_t": 12.6
    }
   ],
+  "knee_raises": [],
   "clips": [
    {
     "clip": "kumite_01_siroki_kadar",
@@ -1088,6 +1116,9 @@
      "punches": 9,
      "kicks": 0,
      "advances": 5,
+     "reached": 0,
+     "reach_known": 9,
+     "knee_raises": 0,
      "exchanges_initiated": 5,
      "exchanges_total": 11
     },
@@ -1107,9 +1138,12 @@
     },
     "counts": {
      "strikes": 1,
-     "punches": 0,
-     "kicks": 1,
+     "punches": 1,
+     "kicks": 0,
      "advances": 2,
+     "reached": 0,
+     "reach_known": 1,
+     "knee_raises": 0,
      "exchanges_initiated": 2,
      "exchanges_total": 7
     },
@@ -1132,6 +1166,9 @@
      "punches": 2,
      "kicks": 0,
      "advances": 1,
+     "reached": 0,
+     "reach_known": 2,
+     "knee_raises": 0,
      "exchanges_initiated": 1,
      "exchanges_total": 2
     },
@@ -1168,10 +1205,13 @@
   "active_s": 55.8,
   "counts": {
    "strikes": 31,
-   "punches": 30,
-   "kicks": 1,
+   "punches": 31,
+   "kicks": 0,
    "advances": 12,
-   "exchanges_initiated": 12
+   "exchanges_initiated": 12,
+   "reached": 2,
+   "reach_known": 31,
+   "knee_raises": 0
   },
   "points_for": 0.0,
   "points_against": 4.0,
@@ -2114,6 +2154,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 16.0,
+    "reach": 1.05,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 2.84
    },
@@ -2123,6 +2165,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 9.7,
+    "reach": 1.11,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 3.88
    },
@@ -2132,6 +2176,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 12.6,
+    "reach": 0.69,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 6.21
    },
@@ -2141,6 +2187,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 12.7,
+    "reach": 1.18,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 7.09
    },
@@ -2150,6 +2198,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 12.3,
+    "reach": 1.17,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 7.26
    },
@@ -2159,6 +2209,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 8.1,
+    "reach": 0.77,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 8.59
    },
@@ -2168,6 +2220,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 9.1,
+    "reach": 0.58,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 9.59
    },
@@ -2177,6 +2231,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 11.5,
+    "reach": 1.07,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 9.97
    },
@@ -2186,6 +2242,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 8.0,
+    "reach": 0.6,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 10.59
    },
@@ -2195,6 +2253,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 13.1,
+    "reach": 0.97,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 11.14
    },
@@ -2204,6 +2264,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 13.4,
+    "reach": 0.93,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 11.97
    },
@@ -2213,6 +2275,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 17.5,
+    "reach": 0.9,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 12.18
    },
@@ -2222,6 +2286,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 13.7,
+    "reach": 0.86,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 12.55
    },
@@ -2231,6 +2297,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 7.7,
+    "reach": 1.63,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 13.22
    },
@@ -2240,6 +2308,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 6.1,
+    "reach": 2.04,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 14.89
    },
@@ -2249,6 +2319,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 7.3,
+    "reach": 1.09,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 15.64
    },
@@ -2258,6 +2330,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 8.7,
+    "reach": 2.36,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 16.64
    },
@@ -2267,6 +2341,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 9.6,
+    "reach": 0.78,
+    "reached": false,
     "clip": "kumite_01_siroki_kadar",
     "clip_t": 20.85
    },
@@ -2276,15 +2352,19 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 12.1,
+    "reach": 1.89,
+    "reached": false,
     "clip": "kumite_02_siroki_kadar",
     "clip_t": 7.84
    },
    {
     "frame": 261,
     "t": 38.63,
-    "type": "kick",
+    "type": "punch",
     "limb": "left_hand",
     "speed": 13.8,
+    "reach": 1.23,
+    "reached": false,
     "clip": "kumite_02_siroki_kadar",
     "clip_t": 10.89
    },
@@ -2294,6 +2374,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 5.7,
+    "reach": 1.63,
+    "reached": false,
     "clip": "kumite_02_siroki_kadar",
     "clip_t": 13.1
    },
@@ -2303,6 +2385,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 13.4,
+    "reach": 1.66,
+    "reached": false,
     "clip": "kumite_02_siroki_kadar",
     "clip_t": 13.76
    },
@@ -2312,6 +2396,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 13.6,
+    "reach": 0.31,
+    "reached": true,
     "clip": "kumite_02_siroki_kadar",
     "clip_t": 18.81
    },
@@ -2321,6 +2407,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 7.1,
+    "reach": 4.98,
+    "reached": false,
     "clip": "kumite_02_siroki_kadar",
     "clip_t": 20.02
    },
@@ -2330,6 +2418,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 12.4,
+    "reach": 1.02,
+    "reached": false,
     "clip": "kumite_02_siroki_kadar",
     "clip_t": 30.57
    },
@@ -2339,6 +2429,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 10.7,
+    "reach": 1.35,
+    "reached": false,
     "clip": "kumite_02_siroki_kadar",
     "clip_t": 32.95
    },
@@ -2348,6 +2440,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 9.0,
+    "reach": 0.73,
+    "reached": false,
     "clip": "kumite_02_siroki_kadar",
     "clip_t": 33.74
    },
@@ -2357,6 +2451,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 7.2,
+    "reach": 0.42,
+    "reached": true,
     "clip": "kumite_02_siroki_kadar",
     "clip_t": 34.24
    },
@@ -2366,6 +2462,8 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 12.7,
+    "reach": 1.33,
+    "reached": false,
     "clip": "kumite_03_siroki_kadar",
     "clip_t": 9.55
    },
@@ -2375,6 +2473,8 @@
     "type": "punch",
     "limb": "left_hand",
     "speed": 7.8,
+    "reach": 1.77,
+    "reached": false,
     "clip": "kumite_03_siroki_kadar",
     "clip_t": 9.93
    },
@@ -2384,10 +2484,13 @@
     "type": "punch",
     "limb": "right_hand",
     "speed": 9.5,
+    "reach": 1.76,
+    "reached": false,
     "clip": "kumite_03_siroki_kadar",
     "clip_t": 10.3
    }
   ],
+  "knee_raises": [],
   "clips": [
    {
     "clip": "kumite_01_siroki_kadar",
@@ -2406,6 +2509,9 @@
      "punches": 18,
      "kicks": 0,
      "advances": 4,
+     "reached": 0,
+     "reach_known": 18,
+     "knee_raises": 0,
      "exchanges_initiated": 6,
      "exchanges_total": 11
     },
@@ -2425,9 +2531,12 @@
     },
     "counts": {
      "strikes": 10,
-     "punches": 9,
-     "kicks": 1,
+     "punches": 10,
+     "kicks": 0,
      "advances": 6,
+     "reached": 2,
+     "reach_known": 10,
+     "knee_raises": 0,
      "exchanges_initiated": 5,
      "exchanges_total": 7
     },
@@ -2450,6 +2559,9 @@
      "punches": 3,
      "kicks": 0,
      "advances": 2,
+     "reached": 0,
+     "reach_known": 3,
+     "knee_raises": 0,
      "exchanges_initiated": 1,
      "exchanges_total": 2
     },

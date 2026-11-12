@@ -76,7 +76,9 @@ zoom and in pixel space. Each threshold is in `DEFAULTS` at the top of the file.
 | Concept | Definition |
 |---|---|
 | **live time** | both athletes tracked, **no** score graphic on screen, and **not idle** (idle = both nearly still and >4 torso apart for ~1 s: walk-back, waiting for "hajime") |
-| **strike** | wrist (punch) or ankle (kick) speed peak relative to own hips ≥ 5 torso/s, aimed at the opponent, with the arm going from bent to extended (or the foot rising) within 0.3 s, at 1.2-6 torso distance (not in a clinch); max 1 per 0.35 s. **Kick** if a knee or ankle is raised at that moment |
+| **strike** | wrist (punch) or ankle (kick) speed peak relative to own hips ≥ 5 torso/s, aimed at the opponent, with the arm going from bent to extended (or the foot rising) within 0.3 s, at 1.2-6 torso distance (not in a clinch); max 1 per 0.35 s. **Punch vs kick comes from the limb that struck** (hand = punch, foot = kick). Until 2026-11-12 a raised knee turned any hand strike into a "kick", which mislabeled lunge punches (FRA's yuko, clip 02 18.8 s) |
+| **reach** (per strike) | closest 2D distance from the striking wrist/ankle to the opponent's head/shoulders/hips, in torso units; `reached` = ≤ 0.5. **A proxy, not contact.** A low value is reliable (checked by eye: clip 02 34.2 s, 0.42 = fist at the shoulder); a high value is not proof of a miss (FRA's yuko punch, thrown with the far arm hidden behind her body, reads 1.04) |
+| **knee raise** | knee chambered / ankle up ≥ 0.12 s, in range, with no strike of the same athlete within ±0.3 s: a possible feint. Not a strike, not in any metric. **0 detected in FRA vs CRO**: at 360p the knee rarely clears the threshold, and CRO's real high kick (clip 03 9.75 s) falls in frames where the pose model lost her |
 | **advance** | moving toward the opponent > 1.5 torso/s for ≥ 0.2 s |
 | **exchange** | strikes from either athlete within 1 s of each other; **initiator** = whoever advanced or struck first (looking 0.8 s back) |
 | **strike_rate** | strikes per minute of live time |
@@ -258,7 +260,7 @@ itself hasn't been run yet (no API key on the dev laptop).
 
 ## 7. Known limitations (keep them visible in the UI and the pitch)
 1. **Strike counts are not validated** against a human count. Treat them as estimates.
-2. **Punch vs kick is unreliable at 360p.** The pose model often loses an athlete during a fast kick.
+2. **Kicks are often missed at 360p.** The pose model often loses an athlete during a fast kick. (Punch vs kick now comes from the limb that struck, so lunge punches are no longer mislabeled as kicks.)
 3. **Cohort = 2 athletes** (one bout), so percentiles and the gap are illustrative only.
 4. **`standing_pct` is a placeholder** (bout points share).
 5. **CPU speed:** ~1.7 frames/s on a Ryzen 7 4700U (no NVIDIA GPU). A CUDA GPU would be ~10× faster.
