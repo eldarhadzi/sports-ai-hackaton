@@ -18,6 +18,7 @@ from calibration import calibrate_from_click, load_calibration, save_calibration
 from analysis.karate import compute_movement_stats
 from analysis.metrics import compute_clip_metrics
 from visualization import draw_frame, render_heatmap, save_color_debug_strip
+from analysis.ground_truth import compute_gt_metrics, gt_path, load_frame_detections, load_gt
 from export import JsonlWriter, write_run_meta
 
 MAX_COLOR_DEBUG_FRAMES = 10
@@ -349,6 +350,17 @@ def main():
     )
 
     metrics = compute_clip_metrics(jsonl_path, frame_idx, selector.id_switch_count, selector.color_swap_count)
+    gt = load_gt(gt_path(Path(config["export"]["data_dir"]), input_path.stem))
+    if gt is not None:
+        metrics["ground_truth"] = compute_gt_metrics(load_frame_detections(jsonl_path), gt)
+        g = metrics["ground_truth"]
+        logger.info(
+            "GT: identity_acc=%s%% swapped=%d unknown=%d non_athlete_slot_frames=%d missed=%d (%d labeled frames)",
+            g["identity_accuracy_pct"], g["identity_swapped"], g["identity_unknown"],
+            g["non_athlete_slot_frames"], g["missed_athletes"], g["labeled_frames"],
+        )
+    else:
+        logger.info("GT: no ground-truth labels for %s (run scripts/label_ground_truth.py)", input_path.stem)
     (data_dir / f"{input_path.stem}_metrics.json").write_text(json.dumps(metrics, indent=2))
     logger.info(
         "Metrics: both=%.1f%% one=%.1f%% zero=%.1f%% id_switches=%d color_swaps=%d filter_violations=%d",
