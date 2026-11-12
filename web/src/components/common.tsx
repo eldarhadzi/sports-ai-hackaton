@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
-import { useProfiles } from "../lib/api";
-import { METRICS, fmtUnit, limitations } from "../lib/constants";
+import { METRICS, fmtUnit } from "../lib/constants";
 import type { Confidence, MetricKey, Report } from "../lib/types";
 
 /** Renders loading / error states for one query, then the children with the data. */
@@ -34,23 +32,6 @@ export function QueriesState({ qs, children }: { qs: UseQueryResult<unknown>[]; 
     );
   if (qs.some((q) => q.isPending)) return <div className="loading" role="status">Loading…</div>;
   return <>{children()}</>;
-}
-
-export function Limitations({ compact = false }: { compact?: boolean }) {
-  // Smallest cohort in the run (shared cache with the pages, so no extra request).
-  const { run = "" } = useParams();
-  const profiles = useProfiles(run);
-  const cohortN = profiles.data?.length ? Math.min(...profiles.data.map((p) => p.cohort_n)) : undefined;
-  return (
-    <aside className={"limits" + (compact ? " compact" : "")} aria-label="Known limitations">
-      <strong>Known limitations</strong>
-      <ol>
-        {limitations(cohortN).map((l) => (
-          <li key={l}>{l}</li>
-        ))}
-      </ol>
-    </aside>
-  );
 }
 
 const BADGE: Record<Confidence, { icon: string; cls: string }> = {
@@ -153,14 +134,5 @@ export function ReachedTag() {
     <span className="tag" title="The striking hand/foot got close to the opponent's head, shoulders or hips (2D estimate, not contact).">
       reached
     </span>
-  );
-}
-
-export function ReachNote() {
-  return (
-    <>
-      "Reached" = the hand or foot got close to the opponent's head, shoulders or hips in the image. It is a 2D
-      estimate, not contact; an arm hidden behind the body never shows as reached.
-    </>
   );
 }

@@ -10,7 +10,8 @@ It shows what the pipeline already produced. It never writes to `data/` or regen
 | Bout view | `/r/<run>/bout/<clip>` | `features/<clip>.json` + annotated video; chart and video are time-aligned (click to seek, playhead follows the video) |
 | Scouting board | `/r/<run>/scouting` | profiles (skill vs standing) |
 
-The known limitations (HANDOFF.md section 7, items 1-4) are visible on every page.
+The known limitations (HANDOFF.md section 7, items 1-4) are in the downloadable HTML report. By team decision
+they are not shown on the dashboard pages; strike counts are still marked as estimates (`~`).
 
 ## Run it (development)
 

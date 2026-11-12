@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
-import { useBouts, useProfiles, useReports, videoUrl } from "../lib/api";
+import { useBouts, useClips, useProfiles, useReports, videoUrl } from "../lib/api";
 import { CoachReport, ConfidenceBadge, MetricTile, QueriesState, ReachedTag, StatTile } from "../components/common";
 import { CohortDots, InitiativeTimeline } from "../components/charts";
 import VideoPlayer, { type SeekRequest } from "../components/VideoPlayer";
@@ -14,7 +14,14 @@ export default function AthleteCard() {
   const profiles = useProfiles(run);
   const reports = useReports(run);
   const bouts = useBouts(run);
+  const clips = useClips(run);
   const [picked, setPicked] = useState<{ ev: StrikeEvent; n: number } | null>(null);
+  // Any change of :id (select, browser Back/Forward) drops the previous athlete's picked strike.
+  const [shownId, setShownId] = useState(id);
+  if (shownId !== id) {
+    setShownId(id);
+    setPicked(null);
+  }
 
   const p = profiles.data?.find((x) => x.id === id);
   const evKey = (e: StrikeEvent) => `${e.clip}|${e.frame}`;
@@ -32,7 +39,7 @@ export default function AthleteCard() {
 
   return (
     <div className="page">
-      <QueriesState qs={[profiles, reports, bouts]}>
+      <QueriesState qs={[profiles, reports, bouts, clips]}>
         {() => {
           const prof = p!;
           const group = profiles.data!.filter((q) => q.age_group === prof.age_group);
@@ -97,7 +104,11 @@ export default function AthleteCard() {
                     <h2>Strikes</h2>
                     {current ? (
                       <>
-                        <VideoPlayer src={videoUrl(run, current.clip!)} seek={seek} />
+                        {clips.data!.find((c) => c.clip === current.clip)?.has_video ? (
+                          <VideoPlayer src={videoUrl(run, current.clip!)} seek={seek} />
+                        ) : (
+                          <div className="notice">Annotated video not found for this clip.</div>
+                        )}
                         <div className="jump-list" role="list">
                           {prof.events.map((e) => (
                             <button

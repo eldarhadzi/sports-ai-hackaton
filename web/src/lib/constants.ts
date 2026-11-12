@@ -43,7 +43,7 @@ export function fmt(k: MetricKey, v: number | null | undefined): string {
 export const fmtUnit = (k: MetricKey, v: number | null | undefined) =>
   v == null ? "—" : fmt(k, v) + METRICS[k].unit;
 
-// HANDOFF.md section 7, items 1-4: always visible. The cohort line is computed from the data.
+// HANDOFF.md section 7, items 1-4: shown in the downloadable report. The cohort line is computed from the data.
 export function limitations(cohortN?: number): string[] {
   const c =
     cohortN == null

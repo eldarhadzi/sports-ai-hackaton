@@ -16,6 +16,13 @@ export default function BoutView() {
   const [seek, setSeek] = useState<SeekRequest | null>(null);
   const onTime = useCallback((t: number) => setTime(t), []);
   const seekTo = useCallback((t: number) => setSeek((s) => ({ t: Math.max(0, t), n: (s?.n ?? 0) + 1 })), []);
+  // Any change of :clip (tabs, browser Back/Forward) starts the new clip from 0, not at the old seek time.
+  const [shownClip, setShownClip] = useState(clip);
+  if (shownClip !== clip) {
+    setShownClip(clip);
+    setSeek(null);
+    setTime(0);
+  }
 
   const names = useMemo(() => {
     const out: Record<Slot, string> = { aka: "AKA", ao: "AO" };
@@ -24,6 +31,12 @@ export default function BoutView() {
   }, [profiles.data, clip]);
 
   if (clips.data && !clip && clips.data[0]) return <Navigate to={`/r/${run}/bout/${clips.data[0].clip}`} replace />;
+  if (clips.data && !clips.data.length)
+    return (
+      <div className="page">
+        <div className="notice">No clips in this run.</div>
+      </div>
+    );
   const info = clips.data?.find((c) => c.clip === clip);
 
   return (
@@ -39,7 +52,6 @@ export default function BoutView() {
                     key={c.clip}
                     to={`/r/${run}/bout/${c.clip}`}
                     className={({ isActive }) => "tab" + (isActive ? " active" : "")}
-                    onClick={() => { setSeek(null); setTime(0); }}
                   >
                     {clipName(c.clip)}
                   </NavLink>

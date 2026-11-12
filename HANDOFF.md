@@ -258,7 +258,7 @@ itself hasn't been run yet (no API key on the dev laptop).
 
 ---
 
-## 7. Known limitations (keep them visible in the UI and the pitch)
+## 7. Known limitations (keep them in the pitch and the downloadable report; the dashboard pages no longer show them, by team decision)
 1. **Strike counts are not validated** against a human count. Treat them as estimates.
 2. **Kicks are often missed at 360p.** The pose model often loses an athlete during a fast kick. (Punch vs kick now comes from the limb that struck, so lunge punches are no longer mislabeled as kicks.)
 3. **Cohort = 2 athletes** (one bout), so percentiles and the gap are illustrative only.
@@ -351,8 +351,8 @@ No zip or file transfer is needed: this match's data and videos are in the repo 
 > Rules:
 > - Use the AKA/AO colors above everywhere. Light theme, no dual-axis charts, and a legend
 >   whenever a chart shows 2 series.
-> - Always show the limitations from HANDOFF.md section 7 (items 1-4) as a small caption or info
->   box. Never present strike counts as exact.
+> - Put the limitations from HANDOFF.md section 7 (items 1-4) in the downloadable report (the
+>   dashboard pages leave them out, by team decision). Never present strike counts as exact.
 > - Everything stays local: no uploads, no external APIs, no analytics.
 > - Don't rename JSON fields, since other scripts produce them.
 > - Test with `streamlit.testing.v1.AppTest` (every page, no exceptions), then click through in the browser.
