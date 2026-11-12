@@ -9,6 +9,7 @@ seated, not dark-suited, not a broadcast-graphic overlay) every frame to be a
 candidate, and re-association prefers a belt/glove-color match (AKA=red,
 AO=blue) over pure distance.
 """
+from bisect import bisect_left, bisect_right
 from collections import deque
 from dataclasses import dataclass, field
 import logging
@@ -55,6 +56,20 @@ PATCH_LABEL_MIN_FRAC = 0.15
 OFFICIAL_MIN_DARK_FRAMES = 3
 OFFICIAL_DARK_FRAC = 0.3
 OFFICIAL_WINDOW = 15   # frames each side (pass 1) / 2x trailing (online)
+
+# Track-level official verdict from the LOWER body (round v8): a referee in a white
+# shirt passes the dark-torso check, but wears dark trousers and no gloves, while an
+# athlete wears white gi trousers and red/blue gloves. Measured on the labeled frames
+# (median V along hip-knee-ankle): athletes p5 = 139 (club_02) / 164 (broadcast),
+# club_02 referee p95 = 63. Glove color (strong red/blue only - the weak navy band
+# reads dark trousers as blue) is a veto, never a reason to reject: athletes show it
+# in only ~50% of frames.
+LEG_SEGMENTS = ((LEFT_HIP, LEFT_KNEE), (LEFT_KNEE, 15), (RIGHT_HIP, RIGHT_KNEE), (RIGHT_KNEE, 16))
+LEG_MIN_SAMPLES = 2
+LEG_MIN_MEASURED = 3        # measured frames in the window before a verdict
+LEG_DARK_FRAC = 0.5         # of measured frames in the window with dark legs
+GLOVE_MIN_FRAC = 0.15       # strong red/blue pixel fraction at a wrist = a glove seen
+GLOVE_VETO_FRAC = 0.2       # gloves seen in >= this fraction of the window -> not an official
 
 # Evidence-based CONTINUITY (not identity - that is identity.py's job): when a
 # slot's track vanishes and new tracks appear, a candidate whose color evidence
@@ -151,6 +166,64 @@ def torso_brightness(frame: np.ndarray, keypoints) -> float | None:
         return None
     v_channel = cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)[:, :, 2]
     return float(v_channel.mean())
+
+
+def leg_brightness(frame: np.ndarray, keypoints, bbox) -> float | None:
+    """Median V of small patches along hip-knee and knee-ankle (30/50/70% of each
+    segment) - white gi trousers vs dark suit trousers. None if fewer than
+    LEG_MIN_SAMPLES segments points are confident."""
+    h, w = frame.shape[:2]
+    r = max(2, int((bbox[3] - bbox[1]) * 0.02))
+    values = []
+    for a, b in LEG_SEGMENTS:
+        if not (_kp_ok(keypoints, a) and _kp_ok(keypoints, b)):
+            continue
+        for t in (0.3, 0.5, 0.7):
+            x = int(keypoints[a][0] + t * (keypoints[b][0] - keypoints[a][0]))
+            y = int(keypoints[a][1] + t * (keypoints[b][1] - keypoints[a][1]))
+            patch = frame[max(0, y - r):min(h, y + r + 1), max(0, x - r):min(w, x + r + 1)]
+            if patch.size:
+                values.append(float(np.median(cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)[:, :, 2])))
+    return float(np.median(values)) if len(values) >= LEG_MIN_SAMPLES else None
+
+
+def glove_evidence(frame: np.ndarray, keypoints, bbox) -> float | None:
+    """Largest STRONG red-or-blue pixel fraction of the two wrist patches (no weak
+    navy). None if no wrist keypoint is confident."""
+    best = None
+    for idx in (LEFT_WRIST, RIGHT_WRIST):
+        if not _kp_ok(keypoints, idx, KEYPOINT_CONF_MIN_COLOR):
+            continue
+        _, _, rect = _sample_patch_evidence(frame, bbox, keypoints[idx][0], keypoints[idx][1])
+        if rect is None:
+            continue
+        x1, y1, x2, y2 = rect
+        hsv = cv2.cvtColor(frame[y1:y2, x1:x2], cv2.COLOR_BGR2HSV).reshape(-1, 3).astype(int)
+        hue, sat, val = hsv[:, 0], hsv[:, 1], hsv[:, 2]
+        red = (((hue <= 10) | (hue >= 168)) & (sat >= RED_SAT_MIN) & (val >= RED_VAL_MIN)).mean()
+        blue = ((hue >= 100) & (hue <= 130) & (sat >= BLUE_SAT_MIN) & (val >= BLUE_VAL_MIN)).mean()
+        best = max(best or 0.0, float(red), float(blue))
+    return best
+
+
+def frame_window(rows: list[tuple], lo: int, hi: int) -> list[tuple]:
+    """Rows (frame, ...) of one track, appended in frame order, with lo <= frame <= hi.
+    Binary search: a whole-clip scan per call is quadratic on long tracks."""
+    return rows[bisect_left(rows, lo, key=lambda r: r[0]):bisect_right(rows, hi, key=lambda r: r[0])]
+
+
+def official_by_legs(rows: list[tuple[int, float | None, float | None]], lo: int, hi: int, leg_dark: float) -> bool:
+    """rows: (frame, leg brightness, glove evidence) of one track. Official over
+    frames [lo, hi] if most measured frames show dark legs and gloves are (almost)
+    never seen."""
+    window = [(v, g) for _, v, g in frame_window(rows, lo, hi)]
+    legs = [v for v, _ in window if v is not None]
+    if len(legs) < LEG_MIN_MEASURED:
+        return False
+    if sum(v < leg_dark for v in legs) / len(legs) < LEG_DARK_FRAC:
+        return False
+    gloves = [g for _, g in window if g is not None]
+    return not gloves or sum(g >= GLOVE_MIN_FRAC for g in gloves) / len(gloves) < GLOVE_VETO_FRAC
 
 
 def bbox_ignore_overlap_frac(bbox: tuple[float, float, float, float], zone: tuple[float, float, float, float]) -> float:
@@ -388,6 +461,13 @@ class AthleteSelector:
         # min_track_len times (back-fill: no ~10-frame blind spot at track start).
         self.final_track_stats: dict[int, tuple[int, float]] | None = None
 
+        # Optional {tracker_id: [(frame, leg brightness, glove evidence), ...]} from
+        # pass 1 plus the leg threshold and the window (frames each side): the
+        # lower-body official verdict (official_by_legs). None = off.
+        self.final_legs: dict[int, list] | None = None
+        self.leg_dark: float = 100.0
+        self.leg_window: int = 15
+
         self.id_switch_count = 0
         self.color_swap_count = 0
         self.reassociation_log: list[dict] = []
@@ -423,9 +503,17 @@ class AthleteSelector:
         else:
             flags = track.dark_flags
             lo, hi = frame_idx - 2 * OFFICIAL_WINDOW, frame_idx
-        window = [d for f, d in flags if lo <= f <= hi]
+        window = [d for _, d in frame_window(flags, lo, hi)]
         dark = sum(window)
-        return dark >= OFFICIAL_MIN_DARK_FRAMES and dark / len(window) >= OFFICIAL_DARK_FRAC
+        if dark >= OFFICIAL_MIN_DARK_FRAMES and dark / len(window) >= OFFICIAL_DARK_FRAC:
+            return True
+        return self.official_by_legs(track.tracker_id, frame_idx)
+
+    def official_by_legs(self, tracker_id: int, frame_idx: int) -> bool:
+        if self.final_legs is None:
+            return False
+        return official_by_legs(self.final_legs.get(tracker_id, []), frame_idx - self.leg_window,
+                                frame_idx + self.leg_window, self.leg_dark)
 
     def window_score(self, tracker_id: int | None, lo: int, hi: int) -> float | None:
         """(R-B)/(R+B) of a track's evidence over frames [lo, hi]; None if thin."""
