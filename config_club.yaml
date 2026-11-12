@@ -1,0 +1,111 @@
+# Sports Intelligence - CV prototype config
+
+# "auto" picks cuda > mps > cpu. Override to force a specific device.
+device: auto
+
+model:
+  # Any Ultralytics pose model name, e.g. yolo11n-pose.pt / yolo11s-pose.pt / yolo11m-pose.pt
+  # CORRECTION (round 3): the earlier claim that nano @ imgsz=640 @ conf=0.10
+  # gives 100% coverage was measured by a standalone probe script that was
+  # never actually wired into PoseTracker.track() - imgsz wasn't passed to
+  # model.track() at all, so the real pipeline always ran at Ultralytics'
+  # default resolution regardless of what the probe found. Verified directly
+  # on kumite_02 frame 0 (both athletes standing still): at imgsz=640 the
+  # nano model does not detect the two standing athletes AT ALL (not even as
+  # low-confidence boxes) down to conf=0.10 - only 3 boxes come back, all
+  # seated/dark-suited officials near the mat edges. At imgsz=1280 both
+  # athletes appear at conf 0.86-0.87 and cleanly pass the athlete filter.
+  # nano @ 1280 was sufficient (no need for the small/medium model) - see
+  # data/debug_detection/ for the annotated sweep images this was based on.
+  # Cost: nano @ 1280 runs ~28fps on MPS vs ~80fps @ 640 - acceptable for this
+  # offline prototype.
+  name: yolo11n-pose.pt
+  conf: 0.10
+  imgsz: 1280
+
+# Ultralytics tracker config. bytetrack_tuned.yaml raises track_buffer so a
+# brief miss doesn't immediately force a new tracker ID (see that file).
+tracker: bytetrack_tuned.yaml
+
+tracking:
+  # Ignore tracks shorter than this many frames when choosing the 2 athletes.
+  min_track_len: 10
+  # Ignore detections smaller than this fraction of the frame area.
+  # Kept low deliberately: on real wide-shot kumite footage tested so far,
+  # YOLO never produced persistent tracks for background audience (too small/
+  # dense to detect at all), so this filter isn't doing anti-audience work -
+  # but set too high (0.01 was tried first) it silently excluded BOTH real
+  # athletes in a more zoomed-out clip while a seated corner coach's larger
+  # box passed. Athlete-vs-official selection relies on tatami calibration
+  # (below) and the persistence/size ranking, not this threshold.
+  min_bbox_area_frac: 0.002
+
+athlete_selection:
+  # Max allowed distance (as a fraction of the frame diagonal) when re-associating
+  # a lost athlete to a new tracker id after an ID switch AND no belt/glove
+  # color match is available. Beyond this, the athlete is left unassigned
+  # that frame rather than forced onto a low-confidence match.
+  reassoc_max_dist_frac: 0.15
+
+classifier:
+  # A detection must pass this before it's even considered for AKA/AO -
+  # separate from calibration/tatami-mask, and the primary defense on an
+  # uncalibrated (e.g. moving-camera) clip.
+  # Mean V-channel brightness of the shoulder-to-hip torso region below this
+  # is treated as a dark suit jacket (referee/coach), not a white gi.
+  dark_brightness_threshold: 90
+  # Broadcast-graphic zones: a detection mostly (>=50% of its box) inside a
+  # zone is dropped. Coordinates are given at ref_resolution and scaled to the
+  # real video size. `only_when` makes the zone conditional: it applies only
+  # on frames where the graphic is really up (>= frac_min of the pixels
+  # in `rect` match: V < dark_val_below for the dark text bar, or inside
+  # hsv_min..hsv_max for a color swatch), because real
+  # athletes do stand in that area of the tatami when no graphic is shown.
+  # Measured on the 6 clips (640x360): graphic up -> dark fraction 0.43-0.45,
+  # no graphic -> 0.00, clip 06 never above 0.01.
+  # A graphic's marker pixels appear a few frames after its figures (fade-in) and
+  # vanish before them (fade-out); offline the on-window is widened by this.
+  graphic_fade_pad_seconds: 0.5
+  # club footage: broadcast graphic zones + their detectors disabled
+  ignore_zones: []
+
+ground_point:
+  # Ankle keypoint confidence needed to use ankle midpoint as ground point;
+  # otherwise falls back to bbox bottom-center.
+  ankle_conf_threshold: 0.5
+  # Moving-average window (frames) applied to the ground point.
+  smoothing_window: 5
+
+movement:
+  # Degrees of heading change to count as a "significant direction change".
+  direction_change_angle_deg: 30
+  # Ignore direction changes below this speed - filters jitter. Units differ
+  # by space: pixels/sec before calibration, m/s once calibrated (these are
+  # NOT the same number rescaled - tune each independently).
+  min_move_speed_px: 40.0
+  min_move_speed_mps: 0.3
+
+calibration:
+  tatami_width_m: 8.0
+  tatami_height_m: 8.0
+  # If true and no saved calibration exists for this video, main.py will open an
+  # interactive click window on the first frame. Otherwise pass --calibrate explicitly.
+  interactive_if_missing: false
+
+visualization:
+  draw_skeleton: true
+  draw_trail: true
+  # Trail covers the last N seconds of movement, not a fixed frame count.
+  trail_seconds: 2.0
+  # A ground-point jump bigger than this (pixels, one frame) breaks the
+  # trail line instead of drawing a long straight line across it - avoids
+  # the visually-misleading connector when a slot's tracker ID jumps
+  # between two different people.
+  trail_break_dist_px: 80
+
+export:
+  data_dir: data
+
+identity:
+  # Offline AKA/AO decision (src/identity.py). side_prior=false is color-only.
+  side_prior: true
