@@ -62,8 +62,6 @@ OFFICIAL_WINDOW = 15   # frames each side (pass 1) / 2x trailing (online)
 # frames is the same athlete. Scores are (R-B)/(R+B) in [-1, 1].
 CONT_WINDOW = 30
 MIN_WINDOW_EVIDENCE = 2.0
-CONT_OPPOSITE_MIN = 0.3  # a candidate is excluded only when its color is clearly the OPPOSITE
-                         # sign (both scores at least this strong); weak/near-zero is not evidence
 CONT_CONFIRMED = 0.4    # |score diff| below this => same athlete, distance gate waived
 
 
@@ -492,21 +490,10 @@ class AthleteSelector:
             def diff(t):
                 sc = cand_scores[t.tracker_id]
                 return None if ref is None or sc is None else abs(sc - ref)
-            def clearly_other(t):
-                sc = cand_scores[t.tracker_id]
-                return (
-                    ref is not None and sc is not None and sc * ref < 0
-                    and abs(sc) >= CONT_OPPOSITE_MIN and abs(ref) >= CONT_OPPOSITE_MIN
-                )
-            compatible = [t for t in unassigned_tracks if not clearly_other(t)]
-            if not compatible:
-                logger.warning(
-                    "frame %d: %s lost (tracker %s, color score %s); every candidate looks like a different "
-                    "athlete by color (candidate scores %s) - leaving unassigned",
-                    frame_idx, slot, last_known_tracker_id, None if ref is None else round(ref, 2),
-                    {k: None if v is None else round(v, 2) for k, v in cand_scores.items()},
-                )
-                continue
+            # Color never EXCLUDES a candidate: a slot's reference track can itself
+            # have drifted onto the other athlete (clinches / ID jumps), and an
+            # exclusion then leaves the slot empty. Color only CONFIRMS a match.
+            compatible = list(unassigned_tracks)
             confirmed = [t for t in compatible if diff(t) is not None and diff(t) <= CONT_CONFIRMED]
 
             best = None

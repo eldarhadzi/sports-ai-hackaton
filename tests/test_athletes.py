@@ -189,16 +189,17 @@ def test_track_level_dark_clothing_blocks_slot_even_when_frame_check_passes():
     assert selector.tracker_to_slot(2) is None
 
 
-def test_clearly_opposite_color_candidate_is_not_taken_over_a_distance_match():
+def test_opposite_color_never_blocks_a_nearby_candidate():
     selector = make_selector()
     for frame in range(8):
         dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
         feed(selector, frame, dets, [(100, 400), (600, 400)], [PASS, PASS], ["red", "blue"])
-    # tracker 1 (red) vanishes; a NEARBY new tracker 5 reads clearly blue -> not the same athlete.
+    # tracker 1 (red) vanishes; nearby new tracker 5 reads blue. A slot reference can
+    # have drifted, so color must not leave the slot empty: distance still decides.
     dets = [FakeDetection(2, (500, 0, 700, 400)), FakeDetection(5, (10, 0, 210, 400))]
     for frame in range(8, 14):
         feed(selector, frame, dets, [(600, 400), (110, 400)], [PASS, PASS], ["blue", "blue"])
-    assert selector.slot_to_tracker[AKA] is None
+    assert selector.slot_to_tracker[AKA] == 5
 
 
 def test_weak_same_sign_candidate_is_still_accepted():
