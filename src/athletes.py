@@ -30,27 +30,36 @@ LEFT_HIP, RIGHT_HIP = 11, 12
 LEFT_KNEE, RIGHT_KNEE = 13, 14
 
 KEYPOINT_CONF_MIN = 0.3
-COLOR_VOTE_WINDOW = 15
-COLOR_VOTE_MIN_COUNT = 4
-COLOR_VOTE_MIN_MAJORITY = 0.6
 
 # Color sampling needs a much higher bar than the seated/brightness filter:
 # a wrong hip/wrist position (even at KEYPOINT_CONF_MIN=0.3) can land the
 # patch on the tatami (also red/blue) instead of the belt/glove.
 KEYPOINT_CONF_MIN_COLOR = 0.55
-COLOR_SAT_MIN = 90
-COLOR_VAL_MIN = 50
 COLOR_PATCH_RADIUS = 6
 
-# Identity locking: once a tracker has this many *cumulative* confident
-# same-color reads, its color is locked and reported unconditionally -
-# a single noisy frame (or a short burst near the tatami) can no longer
-# flip AKA/AO. A lock only reverses if the opposite color dominates a
-# longer, separate rolling window strongly enough to be trusted.
-COLOR_LOCK_MIN_COUNT = 20
-COLOR_UNLOCK_WINDOW = 45
-COLOR_UNLOCK_MIN_COUNT = 20
-COLOR_UNLOCK_MAJORITY = 0.85
+# Per-PIXEL color classes inside a patch (not the patch mean: at 360p a belt
+# is ~5px thick, so a 12px patch is mostly white gi and its mean is washed out
+# to S~30-60 even for a vividly red belt).
+RED_SAT_MIN, RED_VAL_MIN = 100, 70
+BLUE_SAT_MIN, BLUE_VAL_MIN = 100, 50
+# Dark navy / purple (a blue belt at 360p): weak blue evidence, not "unknown".
+WEAK_BLUE_HUE = (100, 155)
+WEAK_BLUE_SAT_MIN = 60
+WEAK_BLUE_VAL = (25, 120)
+WEAK_BLUE_WEIGHT = 0.5
+# A patch is only labeled red/blue (for debug strips / jsonl) above this
+# pixel fraction; the evidence itself is the raw fraction, never thresholded.
+PATCH_LABEL_MIN_FRAC = 0.15
+
+# Pair-level identity decision. Evidence is cumulative per track over the
+# whole clip: red_ev / blue_ev are sums of per-patch pixel fractions.
+MIN_EVIDENCE = 3.0
+# Both athletes have evidence: AKA is whoever is redder relative to the other
+# (score = (R-B)/(R+B) in [-1,1]); no absolute threshold, only this gap.
+PAIR_MARGIN = 0.25
+# Only one of the two has evidence: its own score must be at least this far
+# from 0 to say which belt it is.
+SINGLE_MIN = 0.3
 
 
 @dataclass
@@ -62,61 +71,20 @@ class TrackStats:
     last_seen_frame: int = -1
     last_passed_filter: bool = False
     last_reject_reason: str | None = None
-    color_votes: deque = field(default_factory=lambda: deque(maxlen=COLOR_VOTE_WINDOW))
-    # Cumulative confident-sample counts (uncapped) - drive the initial lock.
-    color_counts: dict = field(default_factory=lambda: {"red": 0, "blue": 0})
-    locked_color: str | None = None
-    # Only used once locked - a separate, longer window to decide whether
-    # evidence for the OPPOSITE color is strong enough to reverse the lock.
-    unlock_votes: deque = field(default_factory=lambda: deque(maxlen=COLOR_UNLOCK_WINDOW))
+    red_ev: float = 0.0
+    blue_ev: float = 0.0
 
     @property
     def avg_area(self) -> float:
         return self.total_area / self.frames_seen if self.frames_seen else 0.0
 
-    def record_color_vote(self, color: str) -> None:
-        self.color_votes.append(color)
-        if color == "unknown":
-            return
 
-        if self.locked_color is None:
-            self.color_counts[color] += 1
-            if self.color_counts[color] >= COLOR_LOCK_MIN_COUNT:
-                self.locked_color = color
-                logger.info(
-                    "tracker %d: color identity locked to %s (%d agreeing samples)",
-                    self.tracker_id, color, self.color_counts[color],
-                )
-            return
-
-        self.unlock_votes.append(color)
-        opposite = "blue" if self.locked_color == "red" else "red"
-        if len(self.unlock_votes) >= COLOR_UNLOCK_MIN_COUNT:
-            opp_count = sum(1 for c in self.unlock_votes if c == opposite)
-            if opp_count / len(self.unlock_votes) >= COLOR_UNLOCK_MAJORITY:
-                logger.warning(
-                    "tracker %d: color lock REVERSED %s -> %s (%d/%d = %.0f%% over last %d confident samples)",
-                    self.tracker_id, self.locked_color, opposite,
-                    opp_count, len(self.unlock_votes), 100 * opp_count / len(self.unlock_votes),
-                    len(self.unlock_votes),
-                )
-                self.locked_color = opposite
-                self.color_counts = {"red": 0, "blue": 0}
-                self.unlock_votes.clear()
-
-    @property
-    def color_verdict(self) -> str:
-        if self.locked_color is not None:
-            return self.locked_color
-        votes = [c for c in self.color_votes if c != "unknown"]
-        if len(votes) < COLOR_VOTE_MIN_COUNT:
-            return "unknown"
-        red = votes.count("red")
-        blue = votes.count("blue")
-        top_color, top_count = ("red", red) if red >= blue else ("blue", blue)
-        if top_count / len(votes) >= COLOR_VOTE_MIN_MAJORITY:
-            return top_color
-        return "unknown"
+def evidence_score(red: float, blue: float) -> float | None:
+    """(R-B)/(R+B) in [-1 (all blue), +1 (all red)]; None if too little evidence."""
+    total = red + blue
+    if total < MIN_EVIDENCE:
+        return None
+    return (red - blue) / total
 
 
 def _dist(a, b) -> float:
@@ -233,67 +201,74 @@ def _belt_point(keypoints, bbox) -> tuple[float, float] | None:
 
 def classify_belt_color(
     frame: np.ndarray, bbox: tuple[float, float, float, float], keypoints,
-) -> tuple[str, list[dict]]:
+) -> tuple[str, list[dict], tuple[float, float]]:
     """Samples a small patch at the belt (hip midpoint, shifted up) and at
     each wrist (glove), strictly clamped inside the detection's own bbox so a
-    patch can never land on the tatami floor or another person. Classifies
-    each red/blue/unknown by hue (requiring high saturation) and
-    majority-votes. Returns (color, samples) - samples is for debug
-    visualization: one dict per attempted patch with its label, pixel rect,
-    and read color (or "no_keypoint" if the keypoint wasn't confident enough
-    to sample at all)."""
+    patch can never land on the tatami floor or another person.
+
+    Returns (color, samples, evidence):
+      evidence = (red, blue) summed over the patches - the per-pixel red and
+        (strong + 0.5*weak dark-navy/purple) blue fractions. This, not a
+        per-frame verdict, is what the selector accumulates over the clip.
+      color    = red/blue/unknown for this frame (debug/jsonl only).
+      samples  = one dict per attempted patch for the debug strips: label,
+        pixel rect, red/blue fractions, color (or "no_keypoint")."""
     samples: list[dict] = []
-    votes = []
+    red_total = blue_total = 0.0
 
     belt_pt = _belt_point(keypoints, bbox)
-    if belt_pt is not None:
-        color, rect = _sample_patch_color(frame, bbox, *belt_pt)
-        samples.append({"label": "belt", "rect": rect, "color": color})
-        if color != "unknown":
-            votes.append(color)
-    else:
-        samples.append({"label": "belt", "rect": None, "color": "no_keypoint"})
-
-    for label, idx in (("left_wrist", LEFT_WRIST), ("right_wrist", RIGHT_WRIST)):
-        if not _kp_ok(keypoints, idx, KEYPOINT_CONF_MIN_COLOR):
-            samples.append({"label": label, "rect": None, "color": "no_keypoint"})
+    points = [("belt", belt_pt)] + [
+        (label, (keypoints[idx][0], keypoints[idx][1]) if _kp_ok(keypoints, idx, KEYPOINT_CONF_MIN_COLOR) else None)
+        for label, idx in (("left_wrist", LEFT_WRIST), ("right_wrist", RIGHT_WRIST))
+    ]
+    for label, pt in points:
+        if pt is None:
+            samples.append({"label": label, "rect": None, "color": "no_keypoint", "red": 0.0, "blue": 0.0})
             continue
-        x, y = keypoints[idx][0], keypoints[idx][1]
-        color, rect = _sample_patch_color(frame, bbox, x, y)
-        samples.append({"label": label, "rect": rect, "color": color})
-        if color != "unknown":
-            votes.append(color)
+        red, blue, rect = _sample_patch_evidence(frame, bbox, *pt)
+        color = "unknown"
+        if rect is not None:
+            if red >= PATCH_LABEL_MIN_FRAC and red > blue:
+                color = "red"
+            elif blue >= PATCH_LABEL_MIN_FRAC and blue > red:
+                color = "blue"
+        samples.append({"label": label, "rect": rect, "color": color, "red": red, "blue": blue})
+        red_total += red
+        blue_total += blue
 
-    if not votes:
-        return "unknown", samples
-    red = votes.count("red")
-    blue = votes.count("blue")
-    return ("red" if red >= blue else "blue"), samples
+    if red_total == blue_total == 0.0:
+        return "unknown", samples, (0.0, 0.0)
+    return ("red" if red_total > blue_total else "blue"), samples, (red_total, blue_total)
 
 
-def _sample_patch_color(
+def patch_pixel_evidence(patch_bgr: np.ndarray) -> tuple[float, float]:
+    """(red_frac, blue_frac) of pixels in a BGR patch. blue_frac counts
+    saturated blue fully and dark navy/purple at WEAK_BLUE_WEIGHT."""
+    hsv = cv2.cvtColor(patch_bgr, cv2.COLOR_BGR2HSV).reshape(-1, 3)
+    h, sat, val = hsv[:, 0].astype(int), hsv[:, 1].astype(int), hsv[:, 2].astype(int)
+    red = ((h <= 10) | (h >= 168)) & (sat >= RED_SAT_MIN) & (val >= RED_VAL_MIN)
+    strong_blue = (h >= 100) & (h <= 130) & (sat >= BLUE_SAT_MIN) & (val >= BLUE_VAL_MIN)
+    weak_blue = (
+        (h >= WEAK_BLUE_HUE[0]) & (h <= WEAK_BLUE_HUE[1]) & (sat >= WEAK_BLUE_SAT_MIN)
+        & (val >= WEAK_BLUE_VAL[0]) & (val <= WEAK_BLUE_VAL[1]) & ~strong_blue
+    )
+    n = len(hsv)
+    return float(red.sum()) / n, float(strong_blue.sum() + WEAK_BLUE_WEIGHT * weak_blue.sum()) / n
+
+
+def _sample_patch_evidence(
     frame: np.ndarray, bbox: tuple[float, float, float, float], x: float, y: float,
     radius: int = COLOR_PATCH_RADIUS,
-) -> tuple[str, tuple[int, int, int, int] | None]:
+) -> tuple[float, float, tuple[int, int, int, int] | None]:
     bx1, by1, bx2, by2 = bbox
     x1 = max(int(x - radius), int(bx1))
     y1 = max(int(y - radius), int(by1))
     x2 = min(int(x + radius), int(bx2))
     y2 = min(int(y + radius), int(by2))
     if x2 <= x1 or y2 <= y1:
-        return "unknown", None
-
-    patch = frame[y1:y2, x1:x2]
-    hsv = cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)
-    mean_h, mean_s, mean_v = hsv.reshape(-1, 3).mean(axis=0)
-
-    if mean_s < COLOR_SAT_MIN or mean_v < COLOR_VAL_MIN:
-        return "unknown", (x1, y1, x2, y2)
-    if mean_h <= 10 or mean_h >= 170:
-        return "red", (x1, y1, x2, y2)
-    if 100 <= mean_h <= 130:
-        return "blue", (x1, y1, x2, y2)
-    return "unknown", (x1, y1, x2, y2)
+        return 0.0, 0.0, None
+    red, blue = patch_pixel_evidence(frame[y1:y2, x1:x2])
+    return red, blue, (x1, y1, x2, y2)
 
 
 class AthleteSelector:
@@ -321,14 +296,22 @@ class AthleteSelector:
         self.slot_last_tracker_id: dict[str, int | None] = {AKA: None, AO: None}
         self.slot_last_point: dict[str, tuple[float, float]] = {}
 
+        # Whether the CURRENT holder of each slot has color evidence backing
+        # its AKA/AO label. False -> render "?" instead of guessing from position.
+        self.identity_known: dict[str, bool] = {AKA: False, AO: False}
+        # Optional {tracker_id: (red, blue)} computed over the WHOLE clip in a
+        # first pass; when set it replaces the online running totals.
+        self.final_evidence: dict[int, tuple[float, float]] | None = None
+
         self.id_switch_count = 0
         self.color_swap_count = 0
         self.reassociation_log: list[dict] = []
         # Per-frame bookkeeping for the metrics report (see analysis/metrics.py).
         self.frame_log: list[dict] = []
 
-    def update_track_stats(self, frame_idx: int, detections, ground_points, filter_results, colors):
-        for det, gp, (passes, reject_reason), color in zip(detections, ground_points, filter_results, colors):
+    def update_track_stats(self, frame_idx: int, detections, ground_points, filter_results, evidence):
+        """evidence: per detection (red, blue) from classify_belt_color()."""
+        for det, gp, (passes, reject_reason), (red, blue) in zip(detections, ground_points, filter_results, evidence):
             if det.tracker_id is None:
                 continue
             area = (det.bbox[2] - det.bbox[0]) * (det.bbox[3] - det.bbox[1])
@@ -338,9 +321,29 @@ class AthleteSelector:
             stats.last_seen_frame = frame_idx
             stats.last_passed_filter = passes
             stats.last_reject_reason = reject_reason
-            stats.record_color_vote(color)
+            stats.red_ev += red
+            stats.blue_ev += blue
             if gp is not None:
                 stats.last_ground_point = gp
+
+    def score(self, tracker_id: int | None) -> float | None:
+        if tracker_id is None:
+            return None
+        if self.final_evidence is not None:
+            red, blue = self.final_evidence.get(tracker_id, (0.0, 0.0))
+        else:
+            t = self.tracks.get(tracker_id)
+            red, blue = (t.red_ev, t.blue_ev) if t else (0.0, 0.0)
+        return evidence_score(red, blue)
+
+    def verdict(self, tracker_id: int | None) -> str:
+        """Absolute read of one track, used only to prefer a color-matching
+        candidate when re-associating; the AKA/AO decision is made jointly
+        in _resolve_identity()."""
+        sc = self.score(tracker_id)
+        if sc is None or abs(sc) < SINGLE_MIN:
+            return "unknown"
+        return "red" if sc > 0 else "blue"
 
     def _candidate_tracks(self, frame_idx: int, tatami_mask_fn) -> list[TrackStats]:
         # Must be visible AND pass the athlete filter THIS frame - a track
@@ -370,12 +373,14 @@ class AthleteSelector:
         candidates = self._candidate_tracks(frame_idx, tatami_mask_fn)
         candidates.sort(key=lambda t: t.avg_area, reverse=True)
         self._assign(frame_idx, candidates[:2])
-        self._maybe_correct_color_swap(frame_idx)
+        self._resolve_identity(frame_idx)
         self.frame_log.append({
             "frame": frame_idx,
             "n_candidates": len(candidates),
             "aka_tracker": self.slot_to_tracker[AKA],
             "ao_tracker": self.slot_to_tracker[AO],
+            "aka_known": self.identity_known[AKA],
+            "ao_known": self.identity_known[AO],
         })
 
     def _closest(self, tracks: list[TrackStats], slot: str) -> TrackStats:
@@ -414,7 +419,7 @@ class AthleteSelector:
                 continue
 
             wanted_color = SLOT_COLORS[slot]
-            color_matches = [t for t in unassigned_tracks if t.color_verdict == wanted_color]
+            color_matches = [t for t in unassigned_tracks if self.verdict(t.tracker_id) == wanted_color]
 
             best = None
             reason = None
@@ -454,39 +459,65 @@ class AthleteSelector:
                 "new_tracker_id": best.tracker_id, "reason": reason,
             })
 
-    def _maybe_correct_color_swap(self, frame_idx: int):
-        aka_track = self.tracks.get(self.slot_to_tracker[AKA])
-        ao_track = self.tracks.get(self.slot_to_tracker[AO])
-        if aka_track is None or ao_track is None:
+    def _resolve_identity(self, frame_idx: int):
+        """Decide AKA/AO jointly for the pair from cumulative red/blue evidence.
+
+        Both holders have evidence: the redder one (relative, by PAIR_MARGIN)
+        is AKA - neither needs to clear an absolute bar. Only one has
+        evidence: its own score decides, and the other is the opposite by
+        elimination. No usable evidence: the slot keeps its internal
+        continuity label but identity_known stays False ("?")."""
+        holders = {s: self.slot_to_tracker[s] for s in (AKA, AO)}
+        scores = {s: self.score(t) for s, t in holders.items()}
+        self.identity_known = {AKA: False, AO: False}
+
+        a, o = scores[AKA], scores[AO]
+        if holders[AKA] is not None and holders[AO] is not None:
+            if a is not None and o is not None:
+                if abs(a - o) < PAIR_MARGIN:
+                    return
+                aka_is_redder = a > o
+            else:
+                s_x = a if a is not None else o
+                if s_x is None or abs(s_x) < SINGLE_MIN:
+                    return
+                x_slot = AKA if a is not None else AO
+                x_is_red = s_x > 0
+                aka_is_redder = x_is_red if x_slot == AKA else not x_is_red
+            if not aka_is_redder:
+                self._swap_slots(frame_idx, scores)
+            self.identity_known = {AKA: True, AO: True}
             return
-        if aka_track.color_verdict == "blue" and ao_track.color_verdict == "red":
-            logger.info(
-                "frame %d: AKA/AO swapped - color evidence says they're reversed "
-                "(tracker %s reads blue, tracker %s reads red)",
-                frame_idx, aka_track.tracker_id, ao_track.tracker_id,
-            )
-            self.slot_to_tracker[AKA], self.slot_to_tracker[AO] = (
-                self.slot_to_tracker[AO], self.slot_to_tracker[AKA],
-            )
-            self.slot_last_tracker_id[AKA], self.slot_last_tracker_id[AO] = (
-                self.slot_last_tracker_id[AO], self.slot_last_tracker_id[AKA],
-            )
-            if AKA in self.slot_last_point or AO in self.slot_last_point:
-                aka_pt = self.slot_last_point.get(AKA)
-                ao_pt = self.slot_last_point.get(AO)
-                if ao_pt is not None:
-                    self.slot_last_point[AKA] = ao_pt
-                else:
-                    self.slot_last_point.pop(AKA, None)
-                if aka_pt is not None:
-                    self.slot_last_point[AO] = aka_pt
-                else:
-                    self.slot_last_point.pop(AO, None)
-            self.color_swap_count += 1
-            self.reassociation_log.append({
-                "frame": frame_idx, "slot": "swap", "old_tracker_id": aka_track.tracker_id,
-                "new_tracker_id": ao_track.tracker_id, "reason": "color correction",
-            })
+
+        slot = AKA if holders[AKA] is not None else AO if holders[AO] is not None else None
+        if slot is None or scores[slot] is None or abs(scores[slot]) < SINGLE_MIN:
+            return
+        should_be = AKA if scores[slot] > 0 else AO
+        if should_be != slot:
+            self._swap_slots(frame_idx, scores)
+        self.identity_known[should_be] = True
+
+    def _swap_slots(self, frame_idx: int, scores):
+        old_aka, old_ao = self.slot_to_tracker[AKA], self.slot_to_tracker[AO]
+        logger.info(
+            "frame %d: AKA/AO swapped by color evidence (aka-slot tracker %s score=%s, ao-slot tracker %s score=%s)",
+            frame_idx, old_aka, scores[AKA], old_ao, scores[AO],
+        )
+        self.slot_to_tracker[AKA], self.slot_to_tracker[AO] = old_ao, old_aka
+        self.slot_last_tracker_id[AKA], self.slot_last_tracker_id[AO] = (
+            self.slot_last_tracker_id[AO], self.slot_last_tracker_id[AKA],
+        )
+        aka_pt, ao_pt = self.slot_last_point.get(AKA), self.slot_last_point.get(AO)
+        for slot, pt in ((AKA, ao_pt), (AO, aka_pt)):
+            if pt is not None:
+                self.slot_last_point[slot] = pt
+            else:
+                self.slot_last_point.pop(slot, None)
+        self.color_swap_count += 1
+        self.reassociation_log.append({
+            "frame": frame_idx, "slot": "swap", "old_tracker_id": old_aka,
+            "new_tracker_id": old_ao, "reason": "color evidence",
+        })
 
     def tracker_to_slot(self, tracker_id: int | None) -> str | None:
         if tracker_id is None:
