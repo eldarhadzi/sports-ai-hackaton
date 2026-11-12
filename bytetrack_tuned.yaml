@@ -1,0 +1,11 @@
+# ByteTrack tuned for kumite: longer track_buffer so a brief miss (motion
+# blur during a fast kick, a momentary clinch/overlap) doesn't immediately
+# throw away the tracker ID and force a fresh one. Everything else is
+# Ultralytics' stock bytetrack.yaml default.
+tracker_type: bytetrack
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+track_buffer: 60 # was 30 (~1.25s @24fps) - now ~2.5s @24fps
+match_thresh: 0.8
+fuse_score: True

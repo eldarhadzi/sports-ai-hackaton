@@ -12,9 +12,10 @@ import cv2
 import yaml
 
 from pose_tracker import PoseTracker, LEFT_ANKLE_IDX, RIGHT_ANKLE_IDX
-from athletes import AthleteSelector
+from athletes import AKA, AO, AthleteSelector, classify_belt_color, passes_athlete_filter
 from calibration import calibrate_from_click, load_calibration, save_calibration
 from analysis.karate import compute_movement_stats
+from analysis.metrics import compute_clip_metrics
 from visualization import draw_frame, render_heatmap
 from export import JsonlWriter, write_run_meta
 
@@ -47,6 +48,14 @@ def ground_point_from_detection(det, ankle_conf_threshold: float):
     return ((x1 + x2) / 2.0, y2)
 
 
+def append_trail_point(trail: list, point, break_dist: float):
+    if trail and trail[-1] is not None:
+        prev = trail[-1]
+        if ((point[0] - prev[0]) ** 2 + (point[1] - prev[1]) ** 2) ** 0.5 > break_dist:
+            trail.append(None)
+    trail.append(point)
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True)
@@ -62,6 +71,10 @@ def parse_args():
             "Skip clicking: 'x1,y1,x2,y2,x3,y3,x4,y4' tatami corners in pixel "
             "coordinates, order top-left,top-right,bottom-right,bottom-left."
         ),
+    )
+    parser.add_argument(
+        "--no-heatmap", action="store_true",
+        help="Skip heatmap rendering (e.g. for a moving/panning camera where positions aren't meaningful).",
     )
     return parser.parse_args()
 
@@ -122,7 +135,10 @@ def main():
         )
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-    tracker = PoseTracker(config["model"]["name"], config.get("device", "auto"), config.get("tracker", "bytetrack.yaml"))
+    tracker = PoseTracker(
+        config["model"]["name"], config.get("device", "auto"),
+        config.get("tracker", "bytetrack.yaml"), config["model"].get("conf", 0.25),
+    )
 
     selector = AthleteSelector(
         min_track_len=config["tracking"]["min_track_len"],
@@ -131,12 +147,17 @@ def main():
         frame_width=width, frame_height=height,
     )
 
+    classifier_cfg = config["classifier"]
+    ignore_zones = [tuple(z) for z in classifier_cfg.get("ignore_zones", [])]
+    dark_brightness_threshold = classifier_cfg["dark_brightness_threshold"]
+
     ankle_conf_threshold = config["ground_point"]["ankle_conf_threshold"]
     smoothing_window = config["ground_point"]["smoothing_window"]
-    trail_length = config["visualization"]["trail_length"]
+    trail_length = round(fps * config["visualization"]["trail_seconds"])
+    trail_break_dist = config["visualization"]["trail_break_dist_px"]
 
-    ground_point_history = {"athlete_1": [], "athlete_2": []}
-    trails = {"athlete_1": [], "athlete_2": []}
+    ground_point_history = {AKA: [], AO: []}
+    trails = {AKA: [], AO: []}
 
     tatami_mask_fn = (
         make_tatami_mask_fn(calibration, calib_cfg["tatami_width_m"], calib_cfg["tatami_height_m"])
@@ -162,44 +183,52 @@ def main():
 
         detections = tracker.track(frame)
         raw_ground_points = [ground_point_from_detection(d, ankle_conf_threshold) for d in detections]
+        filter_results = [
+            passes_athlete_filter(frame, d.bbox, d.keypoints, ignore_zones, dark_brightness_threshold)
+            for d in detections
+        ]
+        colors = [classify_belt_color(frame, d.keypoints) for d in detections]
 
-        selector.update_track_stats(frame_idx, detections, raw_ground_points)
+        selector.update_track_stats(frame_idx, detections, raw_ground_points, filter_results, colors)
         selector.select_two(frame_idx, tatami_mask_fn=tatami_mask_fn)
 
         timestamp = frame_idx / fps
 
-        for det, raw_gp in zip(detections, raw_ground_points):
-            athlete_id = selector.tracker_to_athlete(det.tracker_id)
+        for det, raw_gp, (passed, reject_reason), color in zip(detections, raw_ground_points, filter_results, colors):
+            slot = selector.tracker_to_slot(det.tracker_id)
             smoothed_gp = raw_gp
             tatami_point = None
 
-            if athlete_id is not None and raw_gp is not None:
-                history = ground_point_history[athlete_id]
+            if slot is not None and raw_gp is not None:
+                history = ground_point_history[slot]
                 history.append(raw_gp)
                 del history[: max(0, len(history) - smoothing_window)]
                 smoothed_gp = moving_average_point(history)
-                selector.note_ground_point(athlete_id, smoothed_gp)
+                selector.note_ground_point(slot, smoothed_gp)
 
                 if calibration is not None:
                     tatami_point = calibration.to_tatami(smoothed_gp)
 
-                trail = trails[athlete_id]
-                trail.append(smoothed_gp)
+                append_trail_point(trails[slot], smoothed_gp, trail_break_dist)
+                trail = trails[slot]
                 del trail[: max(0, len(trail) - trail_length)]
 
             record = {
                 "frame": frame_idx,
                 "timestamp": timestamp,
-                "athlete_id": athlete_id,
+                "athlete_id": slot,
                 "tracker_id": det.tracker_id,
                 "bbox": det.bbox,
                 "confidence": det.confidence,
                 "keypoints": det.keypoints,
                 "ground_point": smoothed_gp,
                 "tatami_point": tatami_point,
+                "belt_color": color,
+                "passed_athlete_filter": passed,
+                "reject_reason": reject_reason,
             }
             jsonl.write(record)
-            if athlete_id is not None:
+            if slot is not None:
                 records.append(record)
 
         annotated = draw_frame(frame, detections, selector, trails, config["visualization"])
@@ -227,28 +256,37 @@ def main():
         "processing_time_sec": elapsed,
         "effective_fps": effective_fps,
         "id_switch_count": selector.id_switch_count,
+        "color_swap_count": selector.color_swap_count,
         "reassociation_log": selector.reassociation_log,
         "calibrated": calibration is not None,
     })
 
     logger.info(
-        "Done: %d frames in %.1fs (%.1f fps effective). ID switches: %d",
-        frame_idx, elapsed, effective_fps, selector.id_switch_count,
+        "Done: %d frames in %.1fs (%.1f fps effective). ID switches: %d, color swaps: %d",
+        frame_idx, elapsed, effective_fps, selector.id_switch_count, selector.color_swap_count,
+    )
+
+    metrics = compute_clip_metrics(jsonl_path, frame_idx, selector.id_switch_count, selector.color_swap_count)
+    (data_dir / f"{input_path.stem}_metrics.json").write_text(json.dumps(metrics, indent=2))
+    logger.info(
+        "Metrics: both=%.1f%% one=%.1f%% zero=%.1f%% id_switches=%d color_swaps=%d filter_violations=%d",
+        metrics["pct_both_assigned"], metrics["pct_one_assigned"], metrics["pct_zero_assigned"],
+        metrics["id_switch_count"], metrics["color_swap_count"], metrics["filter_violations"],
     )
 
     stats_summary = {}
-    for athlete_id in ("athlete_1", "athlete_2"):
+    for slot in (AKA, AO):
         min_move_speed = (
             config["movement"]["min_move_speed_mps"] if calibration is not None
             else config["movement"]["min_move_speed_px"]
         )
         stats = compute_movement_stats(
-            records, athlete_id, frame_idx,
+            records, slot, frame_idx,
             config["movement"]["direction_change_angle_deg"],
             min_move_speed,
             use_tatami=calibration is not None,
         )
-        stats_summary[athlete_id] = {
+        stats_summary[slot] = {
             "space": stats.space,
             "total_distance": stats.total_distance,
             "avg_speed": stats.avg_speed,
@@ -258,16 +296,17 @@ def main():
         }
         logger.info(
             "%s [%s]: distance=%.1f avg_speed=%.2f peak_speed=%.2f direction_changes=%d visible=%.0f%%",
-            athlete_id, stats.space, stats.total_distance, stats.avg_speed,
+            slot, stats.space, stats.total_distance, stats.avg_speed,
             stats.peak_speed, stats.direction_changes, stats.time_visible_frac * 100,
         )
-        render_heatmap(
-            stats.positions,
-            data_dir / f"{input_path.stem}_{athlete_id}_heatmap.png",
-            calibration=calibration,
-            frame_for_overlay=last_frame if calibration is None else None,
-            tatami_size=(calib_cfg["tatami_width_m"], calib_cfg["tatami_height_m"]) if calibration else None,
-        )
+        if not args.no_heatmap:
+            render_heatmap(
+                stats.positions,
+                data_dir / f"{input_path.stem}_{slot}_heatmap.png",
+                calibration=calibration,
+                frame_for_overlay=last_frame if calibration is None else None,
+                tatami_size=(calib_cfg["tatami_width_m"], calib_cfg["tatami_height_m"]) if calibration else None,
+            )
 
     (data_dir / f"{input_path.stem}_stats.json").write_text(json.dumps(stats_summary, indent=2))
 
