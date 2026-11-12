@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useProfiles } from "../lib/api";
-import { ConfidenceBadge, Limitations, QueryState } from "../components/common";
+import { ConfidenceBadge, QueryState } from "../components/common";
 import { ScoutingScatter } from "../components/charts";
 import { METRICS, METRIC_KEYS, ageGroup, colorOf, fmtUnit } from "../lib/constants";
 
@@ -90,7 +90,6 @@ export default function ScoutingBoard() {
           );
         }}
       </QueryState>
-      <Limitations />
     </div>
   );
 }

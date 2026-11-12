@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Navigate, NavLink, useParams } from "react-router-dom";
 import { useClips, useFeatures, useProfiles, videoUrl } from "../lib/api";
-import { Limitations, QueriesState, QueryState, ReachNote, ReachedTag } from "../components/common";
+import { QueriesState, QueryState, ReachedTag } from "../components/common";
 import { BoutChart } from "../components/charts";
 import VideoPlayer, { type SeekRequest } from "../components/VideoPlayer";
 import { METRICS, METRIC_KEYS, SLOT_COLOR, clipName, fmtUnit, limbName, shortName } from "../lib/constants";
@@ -67,7 +67,6 @@ export default function BoutView() {
                         ) : (
                           <div className="notice">Annotated video not found for this clip.</div>
                         )}
-                        <p className="caption">Annotated: boxes, skeletons and AKA/AO labels drawn by the pipeline.</p>
                       </section>
                       <section className="card">
                         <BoutChart f={f} names={names} currentTime={time} onSeek={(t) => seekTo(t - 0.5)} />
@@ -167,9 +166,6 @@ export default function BoutView() {
                         ) : (
                           <p className="muted small">None detected in this clip.</p>
                         )}
-                        <p className="caption">
-                          Strikes are estimates; jumping starts 1 s before the strike. <ReachNote />
-                        </p>
                       </section>
                     </div>
                   </>
@@ -179,7 +175,6 @@ export default function BoutView() {
           </>
         )}
       </QueriesState>
-      <Limitations />
     </div>
   );
 }

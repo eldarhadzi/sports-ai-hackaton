@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { useBouts, useProfiles, useReports, videoUrl } from "../lib/api";
-import { CoachReport, ConfidenceBadge, Limitations, MetricTile, QueriesState, ReachNote, ReachedTag, StatTile } from "../components/common";
+import { CoachReport, ConfidenceBadge, MetricTile, QueriesState, ReachedTag, StatTile } from "../components/common";
 import { CohortDots, InitiativeTimeline } from "../components/charts";
 import VideoPlayer, { type SeekRequest } from "../components/VideoPlayer";
 import { METRIC_KEYS, ageGroup, clipName, colorOf, limbName } from "../lib/constants";
@@ -92,10 +92,6 @@ export default function AthleteCard() {
                   <section className="card">
                     <h2>Against the cohort</h2>
                     <CohortDots p={prof} group={group} />
-                    <p className="caption">
-                      Cohort percentile per metric; {prof.label} highlighted, others grey. With n = {group.length},
-                      percentiles move in big steps.
-                    </p>
                   </section>
                   <section className="card">
                     <h2>Strikes</h2>
@@ -122,11 +118,9 @@ export default function AthleteCard() {
                       <p className="muted">No strikes detected.</p>
                     )}
                     <p className="caption">
-                      {prof.counts.strikes} strikes ({prof.counts.punches} punches, {prof.counts.kicks} kicks, estimates) ·{" "}
+                      ~{prof.counts.strikes} strikes ({prof.counts.punches} punches, {prof.counts.kicks} kicks) ·{" "}
                       {prof.counts.advances} forward attacks
-                      {prof.counts.reached != null && <> · {prof.counts.reached} clearly reached the opponent</>}
-                      {prof.counts.knee_raises != null && <> · {prof.counts.knee_raises} knee raises without a strike (possible feints)</>}
-                      . <ReachNote /> Jumping starts 1 s before the strike.
+                      {prof.counts.reached != null && <> · {prof.counts.reached} reached the opponent</>}
                     </p>
                   </section>
                 </div>
@@ -158,7 +152,6 @@ export default function AthleteCard() {
           );
         }}
       </QueriesState>
-      <Limitations />
     </div>
   );
 }

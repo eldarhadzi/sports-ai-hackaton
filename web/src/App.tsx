@@ -1,6 +1,6 @@
 import { Navigate, NavLink, Outlet, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { useRuns } from "./lib/api";
-import { Limitations, QueryState } from "./components/common";
+import { QueryState } from "./components/common";
 import MatchOverview from "./pages/MatchOverview";
 import AthleteCard from "./pages/AthleteCard";
 import BoutView from "./pages/BoutView";
@@ -57,11 +57,6 @@ function Layout() {
           {link("/bout", "Bout view")}
           {link("/scouting", "Scouting board")}
         </nav>
-        <Limitations compact />
-        <p className="fineprint">
-          Pose: YOLO11-pose + ByteTrack. Metrics come from keypoints, normalized by body size. All processing is
-          local; the LLM only sees aggregated numbers.
-        </p>
       </aside>
       <main className="main">
         <Outlet />

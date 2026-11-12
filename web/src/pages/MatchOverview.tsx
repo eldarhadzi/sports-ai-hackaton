@@ -1,6 +1,6 @@
 import { Link, useParams } from "react-router-dom";
 import { useBouts, useClips, useProfiles, useReports } from "../lib/api";
-import { QueriesState, Limitations } from "../components/common";
+import { QueriesState } from "../components/common";
 import { MetricCompare } from "../components/charts";
 import { SLOT_COLOR, clipName, shortName } from "../lib/constants";
 import type { Slot } from "../lib/types";
@@ -28,9 +28,6 @@ export default function MatchOverview() {
                     <h1>
                       {b.title}, {b.subtitle}
                     </h1>
-                    <p className="muted">
-                      {b.clips.length} clip(s) analyzed · run <code>{run}</code>
-                    </p>
                   </div>
                   <div className="scoreboard" aria-label={`Final score ${sides.map((s) => `${b.sides[s]!.name} ${b.sides[s]!.points}`).join(", ")}`}>
                     {sides.map((s, i) => {
@@ -56,10 +53,6 @@ export default function MatchOverview() {
 
                 <h2>Metrics side by side</h2>
                 <MetricCompare athletes={athletes} />
-                <p className="caption">
-                  Strike counts are estimates (not checked against a human count). Hover a metric name for its
-                  definition.
-                </p>
 
                 <h2>Coach headlines</h2>
                 <div className="headline-grid">
@@ -94,7 +87,6 @@ export default function MatchOverview() {
           });
         }}
       </QueriesState>
-      <Limitations />
     </div>
   );
 }

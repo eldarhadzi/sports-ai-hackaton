@@ -155,10 +155,6 @@ export function InitiativeTimeline({ p, onPick }: { p: Profile; onPick?: (e: Str
           />
         </ComposedChart>
       </ResponsiveContainer>
-      <p className="caption">
-        Initiative = 0.5 + 0.5·tanh(Δ forward speed / 1.5); above 0.5 = pressing. Clips back to back; gaps = paused or
-        idle. Click a strike to watch it.
-      </p>
     </div>
   );
 }
@@ -286,8 +282,7 @@ export function BoutChart({
         </ComposedChart>
       </ResponsiveContainer>
       <p className="caption">
-        Line above 0.5 = {names.aka} presses, below = {names.ao} presses. Grey bands = exchanges, labeled with who
-        started them. Strike markers: {names.aka} on top, {names.ao} at the bottom. Click anywhere to seek the video.
+        Above 0.5 = {names.aka} presses, below = {names.ao}. Click to seek the video.
       </p>
     </div>
   );
