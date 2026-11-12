@@ -1,0 +1,51 @@
+# Sports Intelligence - CV prototype config
+
+# "auto" picks cuda > mps > cpu. Override to force a specific device.
+device: auto
+
+model:
+  # Any Ultralytics pose model name, e.g. yolo11n-pose.pt / yolo11s-pose.pt / yolo11m-pose.pt
+  name: yolo11n-pose.pt
+
+# Ultralytics built-in tracker config (bytetrack.yaml or botsort.yaml)
+tracker: bytetrack.yaml
+
+tracking:
+  # Ignore tracks shorter than this many frames when choosing the 2 athletes.
+  min_track_len: 10
+  # Ignore detections smaller than this fraction of the frame area (referee/audience far away, etc).
+  min_bbox_area_frac: 0.01
+
+athlete_selection:
+  # Max allowed distance (as a fraction of the frame diagonal) when re-associating
+  # a lost athlete to a new tracker id after an ID switch. Beyond this, the
+  # re-association is still made (best available) but logged as suspicious.
+  reassoc_max_dist_frac: 0.15
+
+ground_point:
+  # Ankle keypoint confidence needed to use ankle midpoint as ground point;
+  # otherwise falls back to bbox bottom-center.
+  ankle_conf_threshold: 0.5
+  # Moving-average window (frames) applied to the ground point.
+  smoothing_window: 5
+
+movement:
+  # Degrees of heading change to count as a "significant direction change".
+  direction_change_angle_deg: 30
+  # Ignore direction changes below this speed (pixels/sec or m/s) - filters jitter.
+  min_move_speed_px: 40.0
+
+calibration:
+  tatami_width_m: 8.0
+  tatami_height_m: 8.0
+  # If true and no saved calibration exists for this video, main.py will open an
+  # interactive click window on the first frame. Otherwise pass --calibrate explicitly.
+  interactive_if_missing: false
+
+visualization:
+  draw_skeleton: true
+  draw_trail: true
+  trail_length: 30
+
+export:
+  data_dir: data
