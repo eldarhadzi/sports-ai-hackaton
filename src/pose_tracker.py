@@ -5,7 +5,11 @@ Kept behind this interface so the underlying model/library can be swapped later
 (e.g. for a permissively-licensed alternative to AGPL Ultralytics YOLO).
 """
 from dataclasses import dataclass
+import hashlib
+import json
 import logging
+import pickle
+from pathlib import Path
 
 import torch
 from ultralytics import YOLO
@@ -29,6 +33,32 @@ class Detection:
     bbox: tuple[float, float, float, float]  # x1, y1, x2, y2
     confidence: float
     keypoints: list[tuple[float, float, float]]  # 17 x (x, y, conf)
+
+
+def det_cache_path(cache_dir: str | Path, video: Path, model_name: str, conf: float, imgsz: int, tracker_cfg: str) -> Path:
+    """Cache file for one video's raw tracker output (boxes, keypoints, tracker ids).
+    The key covers everything that changes that output: model, conf, imgsz, the
+    tracker config's contents, and the video file itself (resolved path + size)."""
+    video = Path(video).resolve()
+    cfg_path = Path(tracker_cfg)
+    key = json.dumps({
+        "video": str(video), "size": video.stat().st_size, "model": model_name, "conf": conf, "imgsz": imgsz,
+        "tracker": cfg_path.read_text() if cfg_path.exists() else tracker_cfg,
+    }, sort_keys=True)
+    return Path(cache_dir) / f"{Path(video).stem}_{hashlib.sha1(key.encode()).hexdigest()[:12]}.pkl"
+
+
+def load_det_cache(path: Path) -> list[list[Detection]] | None:
+    if not path.exists():
+        return None
+    with open(path, "rb") as fh:
+        return pickle.load(fh)
+
+
+def save_det_cache(path: Path, frames: list[list[Detection]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as fh:
+        pickle.dump(frames, fh, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def resolve_device(requested: str) -> str:

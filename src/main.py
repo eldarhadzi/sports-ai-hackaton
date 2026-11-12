@@ -12,7 +12,7 @@ from pathlib import Path
 import cv2
 import yaml
 
-from pose_tracker import PoseTracker, LEFT_ANKLE_IDX, RIGHT_ANKLE_IDX
+from pose_tracker import PoseTracker, LEFT_ANKLE_IDX, RIGHT_ANKLE_IDX, det_cache_path, load_det_cache, save_det_cache
 from athletes import (
     AKA, AO, AthleteSelector, TrackStats, classify_belt_color, dilate_flags, passes_athlete_filter, zone_flags, zone_rects,
 )
@@ -114,6 +114,11 @@ def parse_args():
         "--debug-strips", action="store_true",
         help="Only save belt/glove patch debug strips to <data-dir>/debug_color/ (output video stays clean).",
     )
+    parser.add_argument(
+        "--det-cache", default=None, metavar="DIR",
+        help="Reuse (or save) the raw tracker output per video in DIR, keyed by video + model/conf/imgsz/tracker "
+             "config. Everything after detection+tracking still runs on the real frames.",
+    )
     return parser.parse_args()
 
 
@@ -212,13 +217,24 @@ def main():
         )
         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-    tracker = PoseTracker(
-        config["model"]["name"], config.get("device", "auto"),
-        config.get("tracker", "bytetrack.yaml"), config["model"].get("conf", 0.25),
-        config["model"].get("imgsz", 640),
-    )
+    cache_path = det_cache_path(
+        args.det_cache, input_path, config["model"]["name"], config["model"].get("conf", 0.25),
+        config["model"].get("imgsz", 640), config.get("tracker", "bytetrack.yaml"),
+    ) if args.det_cache else None
+    cached_dets = load_det_cache(cache_path) if cache_path else None
+    if cached_dets is not None:
+        tracker = None
+        logger.info("Detection cache: reusing %s (%d frames)", cache_path, len(cached_dets))
+    else:
+        tracker = PoseTracker(
+            config["model"]["name"], config.get("device", "auto"),
+            config.get("tracker", "bytetrack.yaml"), config["model"].get("conf", 0.25),
+            config["model"].get("imgsz", 640),
+        )
+    device = tracker.device if tracker else "cache"
 
-    provenance = build_provenance(config, args, tracker.device)
+    provenance = build_provenance(config, args, device)
+    provenance["det_cache"] = str(cache_path) if cached_dets is not None else None
     logger.info("RUN PROVENANCE: %s", json.dumps(provenance, indent=2))
 
     selector = AthleteSelector(
@@ -286,7 +302,7 @@ def main():
             break
         last_frame = frame
 
-        detections = tracker.track(frame)
+        detections = cached_dets[len(cached)] if cached_dets is not None else tracker.track(frame)
         raw_ground_points = [ground_point_from_detection(d, ankle_conf_threshold) for d in detections]
         ignore_zones = zone_rects((width, height), ignore_zone_cfgs, [z[len(cached)] for z in zone_on])
         graphic_frames += bool(ignore_zones)
@@ -308,6 +324,11 @@ def main():
         cached.append((detections, raw_ground_points, filter_results, color_results))
         if len(cached) % 100 == 0:
             logger.info("Pass 1: %d frames", len(cached))
+    if cached_dets is not None and len(cached_dets) != len(cached):
+        raise RuntimeError(f"detection cache {cache_path} has {len(cached_dets)} frames, video has {len(cached)}")
+    if cache_path is not None and cached_dets is None:
+        save_det_cache(cache_path, [c[0] for c in cached])
+        logger.info("Detection cache: saved %s", cache_path)
 
     selector.final_dark_flags = track_dark
     selector.final_track_stats = track_stats
@@ -459,7 +480,7 @@ def main():
         "pct_frames_identity_known": 100.0 * sum(identity_known) / max(len(identity_known), 1),
         "model": config["model"]["name"],
         "tracker": config.get("tracker", "bytetrack.yaml"),
-        "device": tracker.device,
+        "device": tracker.device if tracker else "cache",
         "config_snapshot": config,
         "input_fps": fps,
         "input_resolution": [width, height],
