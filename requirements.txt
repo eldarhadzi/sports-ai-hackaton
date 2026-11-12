@@ -6,3 +6,9 @@ matplotlib>=3.9
 pyyaml>=6.0
 pytest>=8.0
 lap>=0.5.12
+# metrics / dashboard / coach report (hackathon round)
+streamlit>=1.40
+plotly>=5.24
+imageio-ffmpeg>=0.5
+anthropic>=0.70
+pydantic>=2.0

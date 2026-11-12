@@ -490,6 +490,8 @@ def main():
                 "ground_point": smoothed_gp,
                 "tatami_point": tatami_point,
                 "belt_color": color,
+                # A score/penalty graphic is on screen (= the referee stopped the bout).
+                "graphic_on": any(z[frame_idx] for z in zone_on),
                 "color_evidence": [round(color_ev[0], 3), round(color_ev[1], 3)],
                 "identity_known": known if slot is not None else None,
                 "passed_athlete_filter": passed,

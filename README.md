@@ -1,5 +1,8 @@
 # Sports Intelligence — CV Prototype (Karate Kumite)
 
+> **Hackathon state (2026-11-12): start with [HANDOFF.md](HANDOFF.md).** It covers what is done,
+> the karate metrics, the dashboard, the data formats, known limits and the prioritized to-do list.
+
 Offline computer-vision prototype that analyzes karate kumite videos: tracks two
 athletes, extracts pose + movement data, and produces stats/heatmaps.
 
