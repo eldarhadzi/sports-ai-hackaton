@@ -188,3 +188,33 @@ def gt_cases(frames: dict[int, list[dict]], gt: dict) -> list[dict]:
                 cases.append({"frame": f, "kind": "swapped", "slot": slot, "tracker": holder["tracker_id"],
                               "pipeline_slot": holder["athlete_id"], "gt_pair_iou": both_iou})
     return cases
+
+
+SANITY_MARGIN = 0.3   # in score units (R-B), per frame; weak evidence is not flagged
+
+
+def sanity_flags(frames: dict[int, list[dict]], gt: dict, margin: float = SANITY_MARGIN):
+    """Labeled frames whose labels contradict the measured belt/glove colors:
+    the box labeled AKA is measurably LESS red than the box labeled AO, or both
+    labels sit on the same box. Returns (n_checked, [(frame, reason)]). Flags are
+    for a human to re-check - they can also be the measurement being wrong."""
+    flagged, checked = [], 0
+    for key, labels in sorted(gt["frames"].items(), key=lambda kv: int(kv[0])):
+        boxes = {s: _gt_box(labels.get(s)) for s in ("aka", "ao")}
+        if None in boxes.values():
+            continue
+        ev = {}
+        for s, b in boxes.items():
+            best = max(frames.get(int(key), []), key=lambda r: iou(r["bbox"], b), default=None)
+            if best is None or iou(best["bbox"], b) < 0.5:
+                break
+            ev[s] = best["color_evidence"]
+        if len(ev) < 2:
+            continue
+        sc = {s: ev[s][0] - ev[s][1] for s in ev}
+        checked += 1
+        same_box = iou(boxes["aka"], boxes["ao"]) > 0.9
+        if same_box or sc["aka"] < sc["ao"] - margin:
+            flagged.append((int(key), "SAME BOX for AKA and AO" if same_box else
+                            f"AKA box R-B={sc['aka']:+.2f} < AO box R-B={sc['ao']:+.2f}"))
+    return checked, flagged
