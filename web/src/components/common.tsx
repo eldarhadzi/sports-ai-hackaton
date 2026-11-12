@@ -1,0 +1,166 @@
+import type { ReactNode } from "react";
+import type { UseQueryResult } from "@tanstack/react-query";
+import { useParams } from "react-router-dom";
+import { useProfiles } from "../lib/api";
+import { METRICS, fmtUnit, limitations } from "../lib/constants";
+import type { Confidence, MetricKey, Report } from "../lib/types";
+
+/** Renders loading / error states for one query, then the children with the data. */
+export function QueryState<T>({ q, children }: { q: UseQueryResult<T>; children: (data: T) => ReactNode }) {
+  if (q.isPending) return <div className="loading" role="status">Loading…</div>;
+  if (q.isError)
+    return (
+      <div className="notice error" role="alert">
+        {q.error.message}{" "}
+        <button className="btn-link" onClick={() => q.refetch()}>
+          Retry
+        </button>
+      </div>
+    );
+  return <>{children(q.data as T)}</>;
+}
+
+/** Waits for several queries; shows the first error. */
+export function QueriesState({ qs, children }: { qs: UseQueryResult<unknown>[]; children: () => ReactNode }) {
+  const err = qs.find((q) => q.isError);
+  if (err)
+    return (
+      <div className="notice error" role="alert">
+        {err.error?.message}{" "}
+        <button className="btn-link" onClick={() => qs.forEach((q) => q.isError && q.refetch())}>
+          Retry
+        </button>
+      </div>
+    );
+  if (qs.some((q) => q.isPending)) return <div className="loading" role="status">Loading…</div>;
+  return <>{children()}</>;
+}
+
+export function Limitations({ compact = false }: { compact?: boolean }) {
+  // Smallest cohort in the run (shared cache with the pages, so no extra request).
+  const { run = "" } = useParams();
+  const profiles = useProfiles(run);
+  const cohortN = profiles.data?.length ? Math.min(...profiles.data.map((p) => p.cohort_n)) : undefined;
+  return (
+    <aside className={"limits" + (compact ? " compact" : "")} aria-label="Known limitations">
+      <strong>Known limitations</strong>
+      <ol>
+        {limitations(cohortN).map((l) => (
+          <li key={l}>{l}</li>
+        ))}
+      </ol>
+    </aside>
+  );
+}
+
+const BADGE: Record<Confidence, { icon: string; cls: string }> = {
+  high: { icon: "●", cls: "good" },
+  medium: { icon: "◐", cls: "warn" },
+  low: { icon: "○", cls: "bad" },
+};
+export function ConfidenceBadge({ c }: { c: Confidence }) {
+  return (
+    <span className={`badge ${BADGE[c].cls}`} title="high: reliability ≥ 0.85, ≥ 3 bouts and cohort ≥ 5 · medium: reliability ≥ 0.7 · otherwise low">
+      <span aria-hidden>{BADGE[c].icon}</span> {c} confidence
+    </span>
+  );
+}
+
+export function Info({ text }: { text: string }) {
+  return (
+    <span className="info" tabIndex={0} aria-label={text} data-tip={text}>
+      ?
+    </span>
+  );
+}
+
+export function MetricTile({ k, value, pct, prefix }: { k: MetricKey; value: number | null; pct?: number | null; prefix?: string }) {
+  const m = METRICS[k];
+  return (
+    <div className="tile">
+      <div className="tile-label">
+        {m.name} <Info text={m.help} />
+      </div>
+      <div className="tile-value">
+        {prefix}
+        {fmtUnit(k, value)}
+      </div>
+      {pct !== undefined && <div className="tile-sub">{pct == null ? "no cohort percentile" : `P${pct} in cohort`}</div>}
+    </div>
+  );
+}
+
+export function StatTile({ label, value, sub, help }: { label: string; value: ReactNode; sub?: ReactNode; help?: string }) {
+  return (
+    <div className="tile">
+      <div className="tile-label">
+        {label} {help && <Info text={help} />}
+      </div>
+      <div className="tile-value">{value}</div>
+      {sub && <div className="tile-sub">{sub}</div>}
+    </div>
+  );
+}
+
+export function CoachReport({ report, runHint }: { report?: Report; runHint: string }) {
+  if (!report)
+    return (
+      <div className="notice">
+        No coach report yet. Run <code>python scripts/coach_report.py --run {runHint}</code>.
+      </div>
+    );
+  const list = (items?: string[]) =>
+    items?.length ? (
+      <ul>
+        {items.map((s) => (
+          <li key={s}>{s}</li>
+        ))}
+      </ul>
+    ) : (
+      <p className="muted">—</p>
+    );
+  return (
+    <section className="report">
+      {report.headline && <h3 className="report-headline">{report.headline}</h3>}
+      {report.summary && <p>{report.summary}</p>}
+      <div className="two-col">
+        <div>
+          <h4>Strengths</h4>
+          {list(report.strengths)}
+        </div>
+        <div>
+          <h4>Weaknesses</h4>
+          {list(report.weaknesses)}
+        </div>
+      </div>
+      <h4>Focus next</h4>
+      {list(report.focus)}
+      {!!report.drills?.length && (
+        <details>
+          <summary>Suggested drills ({report.drills.length})</summary>
+          {list(report.drills)}
+        </details>
+      )}
+      {!!report.caveats?.length && <p className="caption">Caveats: {report.caveats.join(" ")}</p>}
+      <p className="caption">Generated by {report.model ?? "an LLM"} from the metrics only (no video was sent).</p>
+    </section>
+  );
+}
+
+/** Shown only when reach <= reach_thr: the trustworthy direction of a 2D proxy. */
+export function ReachedTag() {
+  return (
+    <span className="tag" title="The striking hand/foot got close to the opponent's head, shoulders or hips (2D estimate, not contact).">
+      reached
+    </span>
+  );
+}
+
+export function ReachNote() {
+  return (
+    <>
+      "Reached" = the hand or foot got close to the opponent's head, shoulders or hips in the image. It is a 2D
+      estimate, not contact; an arm hidden behind the body never shows as reached.
+    </>
+  );
+}
