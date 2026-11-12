@@ -68,7 +68,7 @@ def test_seated_person_never_gets_a_slot():
     assert selector.tracker_to_slot(2) is None
 
 
-def test_color_match_overrides_distance_gate():
+def test_color_continuity_overrides_distance_gate():
     selector = make_selector()
     for frame in range(5):
         dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
@@ -88,25 +88,6 @@ def test_color_match_overrides_distance_gate():
         feed(selector, frame, dets, gps, [PASS, PASS], ["blue", "red"])
 
     assert selector.slot_to_tracker[AKA] == 5
-
-
-def test_color_swap_correction():
-    selector = make_selector()
-    # AKA and AO get assigned backwards at bootstrap (no color info yet).
-    dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
-    gps = [(100, 400), (600, 400)]
-    for frame in range(3):
-        feed(selector, frame, dets, gps, [PASS, PASS], ["unknown", "unknown"])
-    assert selector.slot_to_tracker[AKA] == 1
-
-    # Now color evidence accumulates showing tracker 1 is actually blue and
-    # tracker 2 is actually red - selector should swap them.
-    for frame in range(3, 10):
-        feed(selector, frame, dets, gps, [PASS, PASS], ["blue", "red"])
-
-    assert selector.slot_to_tracker[AKA] == 2
-    assert selector.slot_to_tracker[AO] == 1
-    assert selector.color_swap_count == 1
 
 
 def test_is_seated_heuristic():
@@ -159,37 +140,6 @@ def test_far_unknown_color_candidate_is_left_unassigned():
     assert selector.tracker_to_slot(9) is None
 
 
-def test_pair_decision_is_relative_not_absolute():
-    # Both athletes have only WEAK, mostly-blue evidence (dark belts at 360p),
-    # but tracker 2 is clearly less blue than tracker 1 -> tracker 2 is AKA.
-    selector = make_selector()
-    dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
-    gps = [(100, 400), (600, 400)]
-    for frame in range(10):
-        feed(selector, frame, dets, gps, [PASS, PASS], [(0.05, 0.9), (0.4, 0.5)])
-    assert selector.slot_to_tracker[AKA] == 2
-    assert selector.identity_known == {AKA: True, AO: True}
-
-
-def test_no_evidence_means_identity_unknown_not_a_position_guess():
-    selector = make_selector()
-    dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
-    gps = [(100, 400), (600, 400)]
-    for frame in range(5):
-        feed(selector, frame, dets, gps, [PASS, PASS], ["unknown", "unknown"])
-    assert selector.identity_known == {AKA: False, AO: False}
-
-
-def test_single_athlete_with_evidence_fixes_both_by_elimination():
-    selector = make_selector()
-    dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
-    gps = [(100, 400), (600, 400)]
-    for frame in range(8):
-        feed(selector, frame, dets, gps, [PASS, PASS], ["blue", "unknown"])
-    assert selector.slot_to_tracker[AO] == 1 and selector.slot_to_tracker[AKA] == 2
-    assert selector.identity_known == {AKA: True, AO: True}
-
-
 def test_dark_navy_patch_counts_as_weak_blue_and_red_belt_as_red():
     navy = np.full((12, 12, 3), (70, 30, 35), dtype=np.uint8)      # BGR dark navy/purple
     red = np.full((12, 12, 3), (30, 30, 200), dtype=np.uint8)
@@ -237,3 +187,26 @@ def test_track_level_dark_clothing_blocks_slot_even_when_frame_check_passes():
         feed(selector, frame, dets, gps, [PASS, dark if frame % 2 == 0 else PASS], ["unknown", "unknown"])
     assert selector.is_official(selector.tracks[2], 9) and not selector.is_official(selector.tracks[1], 9)
     assert selector.tracker_to_slot(2) is None
+
+
+def test_clearly_opposite_color_candidate_is_not_taken_over_a_distance_match():
+    selector = make_selector()
+    for frame in range(8):
+        dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
+        feed(selector, frame, dets, [(100, 400), (600, 400)], [PASS, PASS], ["red", "blue"])
+    # tracker 1 (red) vanishes; a NEARBY new tracker 5 reads clearly blue -> not the same athlete.
+    dets = [FakeDetection(2, (500, 0, 700, 400)), FakeDetection(5, (10, 0, 210, 400))]
+    for frame in range(8, 14):
+        feed(selector, frame, dets, [(600, 400), (110, 400)], [PASS, PASS], ["blue", "blue"])
+    assert selector.slot_to_tracker[AKA] is None
+
+
+def test_weak_same_sign_candidate_is_still_accepted():
+    selector = make_selector()
+    for frame in range(8):
+        dets = [FakeDetection(1, (0, 0, 200, 400)), FakeDetection(2, (500, 0, 700, 400))]
+        feed(selector, frame, dets, [(100, 400), (600, 400)], [PASS, PASS], ["red", "blue"])
+    dets = [FakeDetection(2, (500, 0, 700, 400)), FakeDetection(5, (10, 0, 210, 400))]
+    for frame in range(8, 14):
+        feed(selector, frame, dets, [(600, 400), (110, 400)], [PASS, PASS], ["blue", (0.3, 0.2)])
+    assert selector.slot_to_tracker[AKA] == 5

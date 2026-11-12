@@ -54,3 +54,11 @@ def test_unknown_identity_is_not_correct_and_half_labeled_skipped():
     g = {"frames": {"0": {"aka": {"bbox": A}, "ao": {"bbox": B}}, "1": {"aka": {"bbox": A}}}}
     m = compute_gt_metrics({0: [rec(0, "aka", A, known=False), rec(0, "ao", B)]}, g)
     assert m["labeled_frames"] == 1 and m["identity_unknown"] == 1 and m["identity_correct"] == 1
+
+
+def test_clinch_matching_is_one_to_one_best_iou():
+    from analysis.ground_truth import match_holders
+    gt_a, gt_o = [100, 0, 200, 200], [120, 0, 220, 200]            # overlapping GT boxes (clinch)
+    recs = [rec(0, "aka", gt_a), rec(0, "ao", gt_o)]
+    h = match_holders(recs, {"aka": gt_a, "ao": gt_o})
+    assert h["aka"]["athlete_id"] == "aka" and h["ao"]["athlete_id"] == "ao"

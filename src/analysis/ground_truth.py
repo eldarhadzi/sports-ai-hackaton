@@ -56,6 +56,26 @@ def load_frame_detections(jsonl_path: Path) -> dict[int, list[dict]]:
     return frames
 
 
+def match_holders(slot_recs: list[dict], gt_boxes: dict) -> dict:
+    """GT slot -> the pipeline slot-holder record matched to it, or None.
+    One-to-one by best IoU (>= IOU_MATCH), highest-IoU pair first. Taking the
+    first box over the threshold is ambiguous in a clinch, where both GT boxes
+    overlap both pipeline boxes."""
+    pairs = sorted(
+        ((iou(r["bbox"], b), slot, i) for slot, b in gt_boxes.items() if b is not None
+         for i, r in enumerate(slot_recs)),
+        reverse=True,
+    )
+    out, used = {slot: None for slot in gt_boxes}, set()
+    for score, slot, i in pairs:
+        if score < IOU_MATCH:
+            break
+        if out[slot] is None and i not in used:
+            out[slot] = slot_recs[i]
+            used.add(i)
+    return out
+
+
 def _gt_box(label):
     return None if label is None or label == "not_visible" else label["bbox"]
 
@@ -86,11 +106,12 @@ def compute_gt_metrics(frames: dict[int, list[dict]], gt: dict) -> dict:
                 non_athlete_slot_frames += 1
                 non_athlete_frames.append(f)
 
+        holders = match_holders(slot_recs, gt_boxes)
         for slot, box in gt_boxes.items():
             if box is None:
                 continue
             gt_visible += 1
-            holder = next((r for r in slot_recs if iou(r["bbox"], box) >= IOU_MATCH), None)
+            holder = holders[slot]
             if holder is None:
                 missed_athletes += 1
                 missed_frames.append(f)
@@ -115,3 +136,55 @@ def compute_gt_metrics(frames: dict[int, list[dict]], gt: dict) -> dict:
         "non_athlete_frames": sorted(set(non_athlete_frames)),
         "missed_frames": sorted(set(missed_frames)),
     }
+
+
+def gt_cases(frames: dict[int, list[dict]], gt: dict) -> list[dict]:
+    """Every scored frame's problems, one dict per case, with the evidence
+    needed to say WHY: kind in {missed, nonathlete, swapped, unknown}.
+    For 'missed' it reports the best-overlapping detection of ANY kind (so
+    'no detection' vs 'box mismatch' vs 'rejected by filter' vs 'passed the
+    filter but unassigned' are distinguishable)."""
+    cases = []
+    for key, labels in sorted(gt["frames"].items(), key=lambda kv: int(kv[0])):
+        if "aka" not in labels or "ao" not in labels:
+            continue
+        f = int(key)
+        gt_boxes = {s: _gt_box(labels[s]) for s in ("aka", "ao")}
+        recs = frames.get(f, [])
+        slot_recs = [r for r in recs if r["athlete_id"] is not None]
+        both_iou = (
+            iou(gt_boxes["aka"], gt_boxes["ao"]) if gt_boxes["aka"] and gt_boxes["ao"] else None
+        )
+
+        for r in slot_recs:
+            if not any(b is not None and iou(r["bbox"], b) >= IOU_MATCH for b in gt_boxes.values()):
+                best = max(((s, iou(r["bbox"], b)) for s, b in gt_boxes.items() if b), key=lambda x: x[1], default=(None, 0))
+                cases.append({"frame": f, "kind": "nonathlete", "slot": r["athlete_id"], "tracker": r["tracker_id"],
+                              "bbox": r["bbox"], "nearest_gt": best[0], "nearest_iou": round(best[1], 2),
+                              "passed_filter": r["passed_athlete_filter"], "reject": r["reject_reason"],
+                              "gt_pair_iou": both_iou})
+
+        holders = match_holders(slot_recs, gt_boxes)
+        for slot, box in gt_boxes.items():
+            if box is None:
+                continue
+            holder = holders[slot]
+            if holder is None:
+                best = max(recs, key=lambda r: iou(r["bbox"], box), default=None)
+                b_iou = iou(best["bbox"], box) if best else 0.0
+                cases.append({
+                    "frame": f, "kind": "missed", "slot": slot, "gt_bbox": box, "gt_pair_iou": both_iou,
+                    "best_iou": round(b_iou, 2),
+                    "best_tracker": best["tracker_id"] if best and b_iou > 0.1 else None,
+                    "best_passed_filter": best["passed_athlete_filter"] if best and b_iou > 0.1 else None,
+                    "best_reject": best["reject_reason"] if best and b_iou > 0.1 else None,
+                    "best_slot": best["athlete_id"] if best and b_iou > 0.1 else None,
+                    "gt_box_aspect": round((box[2] - box[0]) / max(box[3] - box[1], 1), 2),
+                })
+            elif not holder.get("identity_known", True):
+                cases.append({"frame": f, "kind": "unknown", "slot": slot, "tracker": holder["tracker_id"],
+                              "gt_pair_iou": both_iou})
+            elif holder["athlete_id"] != slot:
+                cases.append({"frame": f, "kind": "swapped", "slot": slot, "tracker": holder["tracker_id"],
+                              "pipeline_slot": holder["athlete_id"], "gt_pair_iou": both_iou})
+    return cases
