@@ -1,0 +1,31 @@
+{
+ "athlete_id": "FRA-1",
+ "model": "Claude (written in Claude Code from profiles.json, same rules as scripts/coach_report.py)",
+ "headline": "Efficient counter-fighter: leads 4-0 while throwing about a third of the opponent's volume",
+ "summary": "FRA fights a low-volume, selective game: 12.9 strikes/min against CRO's 33.4, and only 40% initiative. She still leads 4-0, so she converts the few chances she takes. Her yuko came from an exchange she started (clip 02, 18.8 s). Her one clear risk is how passive she becomes in some stretches.",
+ "strengths": [
+  "Efficiency: 4 points while throwing 12.9 strikes/min against CRO's 33.4. She picks her moments instead of trading volume.",
+  "Committed entries: the exchange that produced her yuko (clip 02, 18.8 s) was initiated by her, a full forward lunge into range.",
+  "Pressure after scoring: in clip 03 (after the ippon) she dictated distance 69% of the moving time, walking CRO back instead of sitting on the lead."
+ ],
+ "weaknesses": [
+  "Concedes the first move: initiative only 40% overall and 29% in clip 02, so CRO dictates when exchanges start.",
+  "Long passive stretches: just 1 detected strike in 21 s of live fighting in clip 02 (2.8/min). Against a stronger counter-fighter, or with the referee watching for passivity, this is a risk.",
+  "Range is neutral rather than owned overall (50%). She only takes control of distance once she is ahead (clip 03)."
+ ],
+ "focus": [
+  "Raise initiative from about 40% toward 50%+ with feints that draw CRO-type attackers into her counter, rather than waiting.",
+  "Keep a minimum work rate in quiet phases. Aim for one real attack or feint every 4-5 s so the gap between actions never grows as long as in clip 02.",
+  "Take range control from the start of the bout, not only after scoring. Make the clip 03 pressure pattern her default."
+ ],
+ "drills": [
+  "Feint-and-counter: 6 x 1 min. The partner attacks only when FRA feints. FRA must feint, read the response, and counter (kizami/gyaku-zuki).",
+  "Initiative clock: 3 x 2 min sparring with a coach count. Whoever moves first in each exchange gets a point; the target is winning the count.",
+  "Center pressure: 4 x 1 min. Start in the middle of the mat and only step forward or sideways, pushing the partner toward the edge without backing up."
+ ],
+ "caveats": [
+  "Cohort is just 2 athletes (one bout, split into 3 clips), so percentiles and the gap are illustrative only.",
+  "Strike counts come from pose estimation on 360p video and are not yet checked against a human count. Punch vs kick labels are unreliable.",
+  "Her ippon happened just before clip 03 and is not in the analyzed footage."
+ ]
+}

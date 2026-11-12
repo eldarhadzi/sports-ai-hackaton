@@ -1,0 +1,275 @@
+{
+  "provenance": {
+    "git_commit": "45ad3db",
+    "git_dirty": true,
+    "git_dirty_files": [
+      "src/main.py",
+      ".streamlit/",
+      "dashboard/",
+      "scripts/build_profiles.py",
+      "src/analysis/features.py"
+    ],
+    "src_config_diff_sha1": "4324861e7514",
+    "model": "yolo11n-pose.pt",
+    "imgsz": 1280,
+    "conf": 0.1,
+    "device": "cpu",
+    "active_features": {
+      "hsv_conversion": "cv2.COLOR_BGR2HSV (unchanged since HEAD; no separate fix exists)",
+      "ignore_zones": [
+        {
+          "name": "yuko_ippon_panel",
+          "ref_resolution": [
+            640,
+            360
+          ],
+          "rect": [
+            220,
+            235,
+            420,
+            340
+          ],
+          "only_when": {
+            "rect": [
+              260,
+              315,
+              380,
+              335
+            ],
+            "dark_val_below": 70,
+            "frac_min": 0.25
+          }
+        },
+        {
+          "name": "chukoku_panel",
+          "ref_resolution": [
+            640,
+            360
+          ],
+          "rect": [
+            395,
+            238,
+            535,
+            332
+          ],
+          "only_when": {
+            "rect": [
+              404,
+              308,
+              420,
+              326
+            ],
+            "hsv_min": [
+              18,
+              120,
+              150
+            ],
+            "hsv_max": [
+              38,
+              255,
+              255
+            ],
+            "frac_min": 0.4
+          }
+        }
+      ],
+      "track_level_dark_clothing_check": true,
+      "color_identity": "offline per-frame pair signal + Viterbi orientation over the whole clip",
+      "trail_breaking_px": 80,
+      "debug_rendering (grey boxes for non-athletes)": false,
+      "leg_official": {
+        "enabled": true,
+        "dark_brightness": 100,
+        "window_seconds": 0.5
+      },
+      "identity_side_prior": true,
+      "color_debug_strips": false,
+      "mat_region": null
+    },
+    "det_cache": null
+  },
+  "graphic_frames": 151,
+  "official_tracks": [
+    1,
+    2,
+    5,
+    6,
+    7,
+    8,
+    12,
+    27,
+    63
+  ],
+  "identity_switches": 0,
+  "pct_frames_identity_known": 100.0,
+  "model": "yolo11n-pose.pt",
+  "tracker": "bytetrack_tuned.yaml",
+  "device": "cpu",
+  "config_snapshot": {
+    "device": "auto",
+    "model": {
+      "name": "yolo11n-pose.pt",
+      "conf": 0.1,
+      "imgsz": 1280
+    },
+    "tracker": "bytetrack_tuned.yaml",
+    "tracking": {
+      "min_track_len": 10,
+      "min_bbox_area_frac": 0.002
+    },
+    "athlete_selection": {
+      "reassoc_max_dist_frac": 0.15
+    },
+    "classifier": {
+      "dark_brightness_threshold": 90,
+      "leg_official": {
+        "enabled": true,
+        "dark_brightness": 100,
+        "window_seconds": 0.5
+      },
+      "graphic_fade_pad_seconds": 0.5,
+      "ignore_zones": [
+        {
+          "name": "yuko_ippon_panel",
+          "ref_resolution": [
+            640,
+            360
+          ],
+          "rect": [
+            220,
+            235,
+            420,
+            340
+          ],
+          "only_when": {
+            "rect": [
+              260,
+              315,
+              380,
+              335
+            ],
+            "dark_val_below": 70,
+            "frac_min": 0.25
+          }
+        },
+        {
+          "name": "chukoku_panel",
+          "ref_resolution": [
+            640,
+            360
+          ],
+          "rect": [
+            395,
+            238,
+            535,
+            332
+          ],
+          "only_when": {
+            "rect": [
+              404,
+              308,
+              420,
+              326
+            ],
+            "hsv_min": [
+              18,
+              120,
+              150
+            ],
+            "hsv_max": [
+              38,
+              255,
+              255
+            ],
+            "frac_min": 0.4
+          }
+        }
+      ]
+    },
+    "mat": {
+      "margin": 0.1
+    },
+    "ground_point": {
+      "ankle_conf_threshold": 0.5,
+      "smoothing_window": 5
+    },
+    "movement": {
+      "direction_change_angle_deg": 30,
+      "min_move_speed_px": 40.0,
+      "min_move_speed_mps": 0.3
+    },
+    "calibration": {
+      "tatami_width_m": 8.0,
+      "tatami_height_m": 8.0,
+      "interactive_if_missing": false
+    },
+    "visualization": {
+      "draw_skeleton": true,
+      "draw_trail": true,
+      "trail_seconds": 2.0,
+      "trail_break_dist_px": 80
+    },
+    "export": {
+      "data_dir": "data"
+    },
+    "identity": {
+      "side_prior": true
+    }
+  },
+  "input_fps": 23.976023976023978,
+  "input_resolution": [
+    640,
+    360
+  ],
+  "frames_processed": 868,
+  "processing_time_sec": 431.041223526001,
+  "effective_fps": 2.013728508144978,
+  "id_switch_count": 0,
+  "color_swap_count": 0,
+  "reassociation_log": [
+    {
+      "frame": 0,
+      "slot": "aka",
+      "old_tracker_id": null,
+      "new_tracker_id": 4,
+      "reason": "bootstrap (no prior position)"
+    },
+    {
+      "frame": 0,
+      "slot": "ao",
+      "old_tracker_id": null,
+      "new_tracker_id": 3,
+      "reason": "bootstrap (no prior position)"
+    },
+    {
+      "frame": 237,
+      "slot": "aka",
+      "old_tracker_id": 4,
+      "new_tracker_id": 4,
+      "reason": "color continuity (score diff 0.08)"
+    },
+    {
+      "frame": 242,
+      "slot": "aka",
+      "old_tracker_id": 4,
+      "new_tracker_id": 4,
+      "reason": "color continuity (score diff 0.08)"
+    },
+    {
+      "frame": 250,
+      "slot": "aka",
+      "old_tracker_id": 4,
+      "new_tracker_id": 4,
+      "reason": "color continuity (score diff 0.01)"
+    },
+    {
+      "frame": 260,
+      "slot": "aka",
+      "old_tracker_id": 4,
+      "new_tracker_id": 4,
+      "reason": "color continuity (score diff 0.08)"
+    }
+  ],
+  "calibrated": true,
+  "mat_region": null
+}

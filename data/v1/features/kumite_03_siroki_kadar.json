@@ -1,0 +1,396 @@
+{
+ "T": 312,
+ "fps": 23.976023976023978,
+ "duration_s": 13.01,
+ "active_s": 7.26,
+ "paused_s": 2.84,
+ "idle_s": 2.88,
+ "athletes": {
+  "aka": {
+   "reliability": 0.99,
+   "coverage": 0.994,
+   "identity_known": 1.0,
+   "keypoint_quality": 0.902,
+   "metrics": {
+    "strike_rate": 16.5,
+    "initiative_share": 0.5,
+    "range_control": 0.69,
+    "tempo": 4.1
+   },
+   "counts": {
+    "strikes": 2,
+    "punches": 2,
+    "kicks": 0,
+    "advances": 1,
+    "exchanges_initiated": 1,
+    "exchanges_total": 2
+   },
+   "events": [
+    {
+     "frame": 246,
+     "t": 10.26,
+     "type": "punch",
+     "limb": "left_hand",
+     "speed": 6.4
+    },
+    {
+     "frame": 302,
+     "t": 12.6,
+     "type": "punch",
+     "limb": "right_hand",
+     "speed": 7.1
+    }
+   ],
+   "timeline": [
+    {
+     "t": 0.0,
+     "initiative": 0.98,
+     "strike": false
+    },
+    {
+     "t": 0.5,
+     "initiative": 0.99,
+     "strike": false
+    },
+    {
+     "t": 1.0,
+     "initiative": 0.96,
+     "strike": false
+    },
+    {
+     "t": 1.5,
+     "initiative": 0.91,
+     "strike": false
+    },
+    {
+     "t": 2.0,
+     "initiative": 0.94,
+     "strike": false
+    },
+    {
+     "t": 2.5,
+     "initiative": 0.86,
+     "strike": false
+    },
+    {
+     "t": 3.0,
+     "initiative": 0.73,
+     "strike": false
+    },
+    {
+     "t": 3.5,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 4.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 4.5,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 5.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 5.51,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 6.01,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 6.51,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 7.01,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 7.51,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 8.01,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 8.51,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 9.01,
+     "initiative": 0.02,
+     "strike": false
+    },
+    {
+     "t": 9.51,
+     "initiative": 0.0,
+     "strike": false
+    },
+    {
+     "t": 10.01,
+     "initiative": 0.0,
+     "strike": true
+    },
+    {
+     "t": 10.51,
+     "initiative": 0.55,
+     "strike": false
+    },
+    {
+     "t": 11.01,
+     "initiative": 0.52,
+     "strike": false
+    },
+    {
+     "t": 11.51,
+     "initiative": 0.5,
+     "strike": false
+    },
+    {
+     "t": 12.01,
+     "initiative": 0.52,
+     "strike": false
+    },
+    {
+     "t": 12.51,
+     "initiative": 0.57,
+     "strike": true
+    }
+   ]
+  },
+  "ao": {
+   "reliability": 0.99,
+   "coverage": 0.994,
+   "identity_known": 1.0,
+   "keypoint_quality": 0.922,
+   "metrics": {
+    "strike_rate": 24.8,
+    "initiative_share": 0.5,
+    "range_control": 0.31,
+    "tempo": 6.9
+   },
+   "counts": {
+    "strikes": 3,
+    "punches": 3,
+    "kicks": 0,
+    "advances": 2,
+    "exchanges_initiated": 1,
+    "exchanges_total": 2
+   },
+   "events": [
+    {
+     "frame": 229,
+     "t": 9.55,
+     "type": "punch",
+     "limb": "right_hand",
+     "speed": 12.7
+    },
+    {
+     "frame": 238,
+     "t": 9.93,
+     "type": "punch",
+     "limb": "left_hand",
+     "speed": 7.8
+    },
+    {
+     "frame": 247,
+     "t": 10.3,
+     "type": "punch",
+     "limb": "right_hand",
+     "speed": 9.5
+    }
+   ],
+   "timeline": [
+    {
+     "t": 0.0,
+     "initiative": 0.02,
+     "strike": false
+    },
+    {
+     "t": 0.5,
+     "initiative": 0.01,
+     "strike": false
+    },
+    {
+     "t": 1.0,
+     "initiative": 0.04,
+     "strike": false
+    },
+    {
+     "t": 1.5,
+     "initiative": 0.09,
+     "strike": false
+    },
+    {
+     "t": 2.0,
+     "initiative": 0.06,
+     "strike": false
+    },
+    {
+     "t": 2.5,
+     "initiative": 0.14,
+     "strike": false
+    },
+    {
+     "t": 3.0,
+     "initiative": 0.27,
+     "strike": false
+    },
+    {
+     "t": 3.5,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 4.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 4.5,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 5.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 5.51,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 6.01,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 6.51,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 7.01,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 7.51,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 8.01,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 8.51,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 9.01,
+     "initiative": 0.98,
+     "strike": false
+    },
+    {
+     "t": 9.51,
+     "initiative": 1.0,
+     "strike": true
+    },
+    {
+     "t": 10.01,
+     "initiative": 1.0,
+     "strike": true
+    },
+    {
+     "t": 10.51,
+     "initiative": 0.45,
+     "strike": false
+    },
+    {
+     "t": 11.01,
+     "initiative": 0.48,
+     "strike": false
+    },
+    {
+     "t": 11.51,
+     "initiative": 0.5,
+     "strike": false
+    },
+    {
+     "t": 12.01,
+     "initiative": 0.48,
+     "strike": false
+    },
+    {
+     "t": 12.51,
+     "initiative": 0.43,
+     "strike": false
+    }
+   ]
+  }
+ },
+ "exchanges": [
+  {
+   "t0": 9.55,
+   "t1": 10.3,
+   "n_strikes": 4,
+   "initiator": "ao"
+  },
+  {
+   "t0": 12.6,
+   "t1": 12.6,
+   "n_strikes": 1,
+   "initiator": "aka"
+  }
+ ],
+ "config": {
+  "kp_conf": 0.3,
+  "pos_smooth_s": 0.15,
+  "limb_smooth_s": 0.07,
+  "punch_speed": 5.0,
+  "kick_speed": 5.0,
+  "punch_extension": 0.85,
+  "kick_height": -0.8,
+  "knee_kick_height": -0.35,
+  "toward_cos": 0.3,
+  "max_range": 6.0,
+  "min_range": 1.2,
+  "chamber_window_s": 0.3,
+  "punch_delta": 0.25,
+  "kick_delta": 0.6,
+  "peak_window_s": 0.12,
+  "refractory_s": 0.35,
+  "advance_speed": 1.5,
+  "advance_min_s": 0.2,
+  "exchange_gap_s": 1.0,
+  "lead_window_s": 0.8,
+  "moving_thr": 0.5,
+  "timeline_step_s": 0.5,
+  "idle_window_s": 1.0,
+  "idle_speed": 1.0,
+  "idle_dist": 4.0,
+  "id_jump_mask_s": 0.1
+ },
+ "clip": "kumite_03_siroki_kadar"
+}

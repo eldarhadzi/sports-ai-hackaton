@@ -107,20 +107,22 @@ python -m venv .venv                       # Python 3.11-3.13 tested (3.13 on Wi
 .venv\Scripts\python -m pytest tests -q            # expect 40 passed
 ```
 
-**Data is not in git, on purpose.** `videos/`, `data/`, `models/` and `*.pt` are git-ignored
-(README "Data & privacy": clips may contain minors; never commit or upload them). Get
-`handoff_v1.zip` from Vedad and unzip it into the repo root. It contains:
+**Data:** `videos/`, `data/`, `models/` and `*.pt` are git-ignored by default (README "Data &
+privacy": clips may contain minors). **One exception is committed on purpose:** the public senior
+broadcast match FRA vs CRO was force-added (`git add -f`), so a clone has everything to work with:
 
 ```
+videos/input/kumite_0{1,2,3}_siroki_kadar.mp4          raw clips (re-run the analysis from these)
+videos/output/v1/kumite_0{1,2,3}_siroki_kadar_web.mp4  annotated, browser-playable
 data/roster.csv
-data/v1/profiles.json
-data/v1/features/kumite_0{1,2,3}_siroki_kadar.json
-data/v1/reports/FRA-1.json, CRO-1.json
-videos/output/v1/kumite_0{1,2,3}_siroki_kadar_web.mp4
+data/v1/<clip>.jsonl, *_run_meta.json, *_metrics.json  pipeline output
+data/v1/calibration/                                    tatami corners of this camera
+data/v1/features/*.json, profiles.json, reports/*.json  metrics, profiles, coach reports
 ```
 
-To re-run the analysis itself, you also need the raw clips in `videos/input/` (ask Vedad).
-The pose model downloads itself on first run (`yolo11n-pose.pt`, ~6 MB).
+**Any new footage stays out of git** unless the team decides otherwise for that clip (`git add -f`
+only for public/adult footage). The pose model downloads itself on first run (`yolo11n-pose.pt`, ~6 MB).
+A re-run of the pipeline recreates `*_analyzed.mp4` (mp4v, not committed) and the detection cache.
 
 ### Commands
 ```bash
@@ -313,6 +315,8 @@ itself hasn't been run yet (no API key on the dev laptop).
 | UI teammate | dashboard + downloadable report | 8 #1, prompt in 10 |
 | Metrics teammate | human strike count + tuning, kick detection | 8 #2, #7 |
 | Vedad | `standing_pct` decision, more footage, API key, pitch | 8 #3, #4, #5, #6 |
+
+No zip or file transfer is needed: this match's data and videos are in the repo (section 3).
 
 ---
 

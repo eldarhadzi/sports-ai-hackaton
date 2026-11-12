@@ -1,0 +1,938 @@
+{
+ "T": 868,
+ "fps": 23.976023976023978,
+ "duration_s": 36.2,
+ "active_s": 21.48,
+ "paused_s": 4.3,
+ "idle_s": 10.09,
+ "athletes": {
+  "aka": {
+   "reliability": 0.98,
+   "coverage": 0.985,
+   "identity_known": 1.0,
+   "keypoint_quality": 0.92,
+   "metrics": {
+    "strike_rate": 2.8,
+    "initiative_share": 0.29,
+    "range_control": 0.41,
+    "tempo": 1.4
+   },
+   "counts": {
+    "strikes": 1,
+    "punches": 0,
+    "kicks": 1,
+    "advances": 2,
+    "exchanges_initiated": 2,
+    "exchanges_total": 7
+   },
+   "events": [
+    {
+     "frame": 451,
+     "t": 18.81,
+     "type": "kick",
+     "limb": "left_hand",
+     "speed": 6.6
+    }
+   ],
+   "timeline": [
+    {
+     "t": 0.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 0.5,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 1.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 1.5,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 2.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 2.5,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 3.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 3.5,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 4.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 4.5,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 5.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 5.51,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 6.01,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 6.51,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 7.01,
+     "initiative": 0.47,
+     "strike": false
+    },
+    {
+     "t": 7.51,
+     "initiative": 0.58,
+     "strike": false
+    },
+    {
+     "t": 8.01,
+     "initiative": 0.7,
+     "strike": false
+    },
+    {
+     "t": 8.51,
+     "initiative": 0.77,
+     "strike": false
+    },
+    {
+     "t": 9.01,
+     "initiative": 0.74,
+     "strike": false
+    },
+    {
+     "t": 9.51,
+     "initiative": 0.88,
+     "strike": false
+    },
+    {
+     "t": 10.01,
+     "initiative": 0.24,
+     "strike": false
+    },
+    {
+     "t": 10.51,
+     "initiative": 0.93,
+     "strike": false
+    },
+    {
+     "t": 11.01,
+     "initiative": 0.99,
+     "strike": false
+    },
+    {
+     "t": 11.51,
+     "initiative": 0.36,
+     "strike": false
+    },
+    {
+     "t": 12.01,
+     "initiative": 0.25,
+     "strike": false
+    },
+    {
+     "t": 12.51,
+     "initiative": 0.26,
+     "strike": false
+    },
+    {
+     "t": 13.01,
+     "initiative": 0.77,
+     "strike": false
+    },
+    {
+     "t": 13.51,
+     "initiative": 0.92,
+     "strike": false
+    },
+    {
+     "t": 14.01,
+     "initiative": 0.56,
+     "strike": false
+    },
+    {
+     "t": 14.51,
+     "initiative": 0.83,
+     "strike": false
+    },
+    {
+     "t": 15.01,
+     "initiative": 0.3,
+     "strike": false
+    },
+    {
+     "t": 15.52,
+     "initiative": 0.74,
+     "strike": false
+    },
+    {
+     "t": 16.02,
+     "initiative": 0.19,
+     "strike": false
+    },
+    {
+     "t": 16.52,
+     "initiative": 0.75,
+     "strike": false
+    },
+    {
+     "t": 17.02,
+     "initiative": 0.82,
+     "strike": false
+    },
+    {
+     "t": 17.52,
+     "initiative": 0.14,
+     "strike": false
+    },
+    {
+     "t": 18.02,
+     "initiative": 0.97,
+     "strike": false
+    },
+    {
+     "t": 18.52,
+     "initiative": 1.0,
+     "strike": true
+    },
+    {
+     "t": 19.02,
+     "initiative": 0.99,
+     "strike": false
+    },
+    {
+     "t": 19.52,
+     "initiative": 0.1,
+     "strike": false
+    },
+    {
+     "t": 20.02,
+     "initiative": 0.0,
+     "strike": false
+    },
+    {
+     "t": 20.52,
+     "initiative": 0.0,
+     "strike": false
+    },
+    {
+     "t": 21.02,
+     "initiative": 0.0,
+     "strike": false
+    },
+    {
+     "t": 21.52,
+     "initiative": 0.03,
+     "strike": false
+    },
+    {
+     "t": 22.02,
+     "initiative": 0.12,
+     "strike": false
+    },
+    {
+     "t": 22.52,
+     "initiative": 0.41,
+     "strike": false
+    },
+    {
+     "t": 23.02,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 23.52,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 24.02,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 24.52,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 25.02,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 25.53,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 26.03,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 26.53,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 27.03,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 27.53,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 28.03,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 28.53,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 29.03,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 29.53,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 30.03,
+     "initiative": 0.04,
+     "strike": false
+    },
+    {
+     "t": 30.53,
+     "initiative": 0.09,
+     "strike": false
+    },
+    {
+     "t": 31.03,
+     "initiative": 0.23,
+     "strike": false
+    },
+    {
+     "t": 31.53,
+     "initiative": 0.16,
+     "strike": false
+    },
+    {
+     "t": 32.03,
+     "initiative": 0.5,
+     "strike": false
+    },
+    {
+     "t": 32.53,
+     "initiative": 0.24,
+     "strike": false
+    },
+    {
+     "t": 33.03,
+     "initiative": 0.34,
+     "strike": false
+    },
+    {
+     "t": 33.53,
+     "initiative": 0.01,
+     "strike": false
+    },
+    {
+     "t": 34.03,
+     "initiative": 0.01,
+     "strike": false
+    },
+    {
+     "t": 34.53,
+     "initiative": 0.37,
+     "strike": false
+    },
+    {
+     "t": 35.03,
+     "initiative": 0.23,
+     "strike": false
+    },
+    {
+     "t": 35.54,
+     "initiative": 0.54,
+     "strike": false
+    },
+    {
+     "t": 36.04,
+     "initiative": 0.33,
+     "strike": false
+    }
+   ]
+  },
+  "ao": {
+   "reliability": 0.98,
+   "coverage": 0.985,
+   "identity_known": 1.0,
+   "keypoint_quality": 0.897,
+   "metrics": {
+    "strike_rate": 27.9,
+    "initiative_share": 0.71,
+    "range_control": 0.59,
+    "tempo": 7.4
+   },
+   "counts": {
+    "strikes": 10,
+    "punches": 9,
+    "kicks": 1,
+    "advances": 6,
+    "exchanges_initiated": 5,
+    "exchanges_total": 7
+   },
+   "events": [
+    {
+     "frame": 188,
+     "t": 7.84,
+     "type": "punch",
+     "limb": "right_hand",
+     "speed": 12.1
+    },
+    {
+     "frame": 261,
+     "t": 10.89,
+     "type": "kick",
+     "limb": "left_hand",
+     "speed": 13.8
+    },
+    {
+     "frame": 314,
+     "t": 13.1,
+     "type": "punch",
+     "limb": "right_hand",
+     "speed": 5.7
+    },
+    {
+     "frame": 330,
+     "t": 13.76,
+     "type": "punch",
+     "limb": "left_hand",
+     "speed": 13.4
+    },
+    {
+     "frame": 451,
+     "t": 18.81,
+     "type": "punch",
+     "limb": "right_hand",
+     "speed": 13.6
+    },
+    {
+     "frame": 480,
+     "t": 20.02,
+     "type": "punch",
+     "limb": "right_hand",
+     "speed": 7.1
+    },
+    {
+     "frame": 733,
+     "t": 30.57,
+     "type": "punch",
+     "limb": "left_hand",
+     "speed": 12.4
+    },
+    {
+     "frame": 790,
+     "t": 32.95,
+     "type": "punch",
+     "limb": "right_hand",
+     "speed": 10.7
+    },
+    {
+     "frame": 809,
+     "t": 33.74,
+     "type": "punch",
+     "limb": "right_hand",
+     "speed": 9.0
+    },
+    {
+     "frame": 821,
+     "t": 34.24,
+     "type": "punch",
+     "limb": "right_hand",
+     "speed": 7.2
+    }
+   ],
+   "timeline": [
+    {
+     "t": 0.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 0.5,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 1.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 1.5,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 2.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 2.5,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 3.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 3.5,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 4.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 4.5,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 5.0,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 5.51,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 6.01,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 6.51,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 7.01,
+     "initiative": 0.53,
+     "strike": false
+    },
+    {
+     "t": 7.51,
+     "initiative": 0.42,
+     "strike": true
+    },
+    {
+     "t": 8.01,
+     "initiative": 0.3,
+     "strike": false
+    },
+    {
+     "t": 8.51,
+     "initiative": 0.23,
+     "strike": false
+    },
+    {
+     "t": 9.01,
+     "initiative": 0.26,
+     "strike": false
+    },
+    {
+     "t": 9.51,
+     "initiative": 0.12,
+     "strike": false
+    },
+    {
+     "t": 10.01,
+     "initiative": 0.76,
+     "strike": false
+    },
+    {
+     "t": 10.51,
+     "initiative": 0.07,
+     "strike": true
+    },
+    {
+     "t": 11.01,
+     "initiative": 0.01,
+     "strike": false
+    },
+    {
+     "t": 11.51,
+     "initiative": 0.64,
+     "strike": false
+    },
+    {
+     "t": 12.01,
+     "initiative": 0.75,
+     "strike": false
+    },
+    {
+     "t": 12.51,
+     "initiative": 0.74,
+     "strike": false
+    },
+    {
+     "t": 13.01,
+     "initiative": 0.23,
+     "strike": true
+    },
+    {
+     "t": 13.51,
+     "initiative": 0.08,
+     "strike": true
+    },
+    {
+     "t": 14.01,
+     "initiative": 0.44,
+     "strike": false
+    },
+    {
+     "t": 14.51,
+     "initiative": 0.17,
+     "strike": false
+    },
+    {
+     "t": 15.01,
+     "initiative": 0.7,
+     "strike": false
+    },
+    {
+     "t": 15.52,
+     "initiative": 0.26,
+     "strike": false
+    },
+    {
+     "t": 16.02,
+     "initiative": 0.81,
+     "strike": false
+    },
+    {
+     "t": 16.52,
+     "initiative": 0.25,
+     "strike": false
+    },
+    {
+     "t": 17.02,
+     "initiative": 0.18,
+     "strike": false
+    },
+    {
+     "t": 17.52,
+     "initiative": 0.86,
+     "strike": false
+    },
+    {
+     "t": 18.02,
+     "initiative": 0.03,
+     "strike": false
+    },
+    {
+     "t": 18.52,
+     "initiative": 0.0,
+     "strike": true
+    },
+    {
+     "t": 19.02,
+     "initiative": 0.01,
+     "strike": false
+    },
+    {
+     "t": 19.52,
+     "initiative": 0.9,
+     "strike": false
+    },
+    {
+     "t": 20.02,
+     "initiative": 1.0,
+     "strike": true
+    },
+    {
+     "t": 20.52,
+     "initiative": 1.0,
+     "strike": false
+    },
+    {
+     "t": 21.02,
+     "initiative": 1.0,
+     "strike": false
+    },
+    {
+     "t": 21.52,
+     "initiative": 0.97,
+     "strike": false
+    },
+    {
+     "t": 22.02,
+     "initiative": 0.88,
+     "strike": false
+    },
+    {
+     "t": 22.52,
+     "initiative": 0.59,
+     "strike": false
+    },
+    {
+     "t": 23.02,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 23.52,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 24.02,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 24.52,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 25.02,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 25.53,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 26.03,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 26.53,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 27.03,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 27.53,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 28.03,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 28.53,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 29.03,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 29.53,
+     "initiative": null,
+     "strike": false
+    },
+    {
+     "t": 30.03,
+     "initiative": 0.96,
+     "strike": false
+    },
+    {
+     "t": 30.53,
+     "initiative": 0.91,
+     "strike": true
+    },
+    {
+     "t": 31.03,
+     "initiative": 0.77,
+     "strike": false
+    },
+    {
+     "t": 31.53,
+     "initiative": 0.84,
+     "strike": false
+    },
+    {
+     "t": 32.03,
+     "initiative": 0.5,
+     "strike": false
+    },
+    {
+     "t": 32.53,
+     "initiative": 0.76,
+     "strike": true
+    },
+    {
+     "t": 33.03,
+     "initiative": 0.66,
+     "strike": false
+    },
+    {
+     "t": 33.53,
+     "initiative": 0.99,
+     "strike": true
+    },
+    {
+     "t": 34.03,
+     "initiative": 0.99,
+     "strike": true
+    },
+    {
+     "t": 34.53,
+     "initiative": 0.63,
+     "strike": false
+    },
+    {
+     "t": 35.03,
+     "initiative": 0.77,
+     "strike": false
+    },
+    {
+     "t": 35.54,
+     "initiative": 0.46,
+     "strike": false
+    },
+    {
+     "t": 36.04,
+     "initiative": 0.67,
+     "strike": false
+    }
+   ]
+  }
+ },
+ "exchanges": [
+  {
+   "t0": 7.84,
+   "t1": 7.84,
+   "n_strikes": 1,
+   "initiator": "ao"
+  },
+  {
+   "t0": 10.89,
+   "t1": 10.89,
+   "n_strikes": 1,
+   "initiator": "aka"
+  },
+  {
+   "t0": 13.1,
+   "t1": 13.76,
+   "n_strikes": 2,
+   "initiator": "ao"
+  },
+  {
+   "t0": 18.81,
+   "t1": 18.81,
+   "n_strikes": 2,
+   "initiator": "aka"
+  },
+  {
+   "t0": 20.02,
+   "t1": 20.02,
+   "n_strikes": 1,
+   "initiator": "ao"
+  },
+  {
+   "t0": 30.57,
+   "t1": 30.57,
+   "n_strikes": 1,
+   "initiator": "ao"
+  },
+  {
+   "t0": 32.95,
+   "t1": 34.24,
+   "n_strikes": 3,
+   "initiator": "ao"
+  }
+ ],
+ "config": {
+  "kp_conf": 0.3,
+  "pos_smooth_s": 0.15,
+  "limb_smooth_s": 0.07,
+  "punch_speed": 5.0,
+  "kick_speed": 5.0,
+  "punch_extension": 0.85,
+  "kick_height": -0.8,
+  "knee_kick_height": -0.35,
+  "toward_cos": 0.3,
+  "max_range": 6.0,
+  "min_range": 1.2,
+  "chamber_window_s": 0.3,
+  "punch_delta": 0.25,
+  "kick_delta": 0.6,
+  "peak_window_s": 0.12,
+  "refractory_s": 0.35,
+  "advance_speed": 1.5,
+  "advance_min_s": 0.2,
+  "exchange_gap_s": 1.0,
+  "lead_window_s": 0.8,
+  "moving_thr": 0.5,
+  "timeline_step_s": 0.5,
+  "idle_window_s": 1.0,
+  "idle_speed": 1.0,
+  "idle_dist": 4.0,
+  "id_jump_mask_s": 0.1
+ },
+ "clip": "kumite_02_siroki_kadar"
+}

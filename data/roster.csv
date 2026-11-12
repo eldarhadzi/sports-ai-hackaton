@@ -1,0 +1,7 @@
+clip,slot,athlete_id,label,age_group,belt,bout_id,points_for,points_against
+kumite_01_siroki_kadar,aka,FRA-1,FRA (AKA),senior_f,black,fra_cro_1,0,0
+kumite_01_siroki_kadar,ao,CRO-1,CRO (AO),senior_f,black,fra_cro_1,0,0
+kumite_02_siroki_kadar,aka,FRA-1,FRA (AKA),senior_f,black,fra_cro_1,1,0
+kumite_02_siroki_kadar,ao,CRO-1,CRO (AO),senior_f,black,fra_cro_1,0,1
+kumite_03_siroki_kadar,aka,FRA-1,FRA (AKA),senior_f,black,fra_cro_1,4,0
+kumite_03_siroki_kadar,ao,CRO-1,CRO (AO),senior_f,black,fra_cro_1,0,4

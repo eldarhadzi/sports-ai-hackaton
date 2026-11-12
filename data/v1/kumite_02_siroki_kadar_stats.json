@@ -1,0 +1,18 @@
+{
+  "aka": {
+    "space": "meters_approx",
+    "total_distance": 23.45542450729436,
+    "avg_speed": 0.6486364709973584,
+    "peak_speed": 4.364021131705872,
+    "direction_changes": 143,
+    "time_visible_frac": 1.0
+  },
+  "ao": {
+    "space": "meters_approx",
+    "total_distance": 25.65792963523748,
+    "avg_speed": 0.7133595314208668,
+    "peak_speed": 3.7082502876573704,
+    "direction_changes": 144,
+    "time_visible_frac": 0.9907834101382489
+  }
+}

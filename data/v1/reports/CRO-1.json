@@ -1,0 +1,31 @@
+{
+ "athlete_id": "CRO-1",
+ "model": "Claude (written in Claude Code from profiles.json, same rules as scripts/coach_report.py)",
+ "headline": "High-volume pressure fighter whose attacks aren't converting: 33 strikes/min, 60% initiative, 0 points",
+ "summary": "CRO does most of the fighting: 2.6x her opponent's strike rate, double the tempo, and she starts 60% of exchanges. None of it has scored (0-4). The data points to conversion and entry timing, not effort: she initiates a lot, but FRA takes the decisive exchanges.",
+ "strengths": [
+  "Work rate: 33.4 strikes/min and 7.7 actions per 10 s, about 2x FRA on both. She keeps the opponent busy.",
+  "Initiative: starts 60% of exchanges overall and 71% in clip 02. She sets the rhythm of the bout.",
+  "Range control in clip 02 (59%): she presses and pushes FRA back for long stretches."
+ ],
+ "weaknesses": [
+  "Conversion: high volume and 0 points. Many attacks are likely being blocked, out of range, or not finished with control.",
+  "Simultaneous exchanges go against her: in the exchange that produced FRA's yuko (clip 02, 18.8 s) both threw at the same moment and FRA scored. Her entries leave her open to the counter.",
+  "Loses distance after conceding: in clip 03 she controlled range only 31% of the time, so FRA walked her back right after the ippon."
+ ],
+ "focus": [
+  "Quality over quantity: fewer, better set-up attacks. A feint or a rhythm change before committing, instead of straight repeated entries.",
+  "Entry defense: cover or angle out on the way in, so a simultaneous counter cannot score first.",
+  "Reset after conceding: regain the center and the initiative within the first few seconds instead of retreating."
+ ],
+ "drills": [
+  "Set-up then attack: 6 x 1 min. Every scoring attempt must come after a feint, a stance switch or a rhythm break; plain straight entries don't count.",
+  "Counter-aware entries: 5 x 1 min. The partner counters gyaku-zuki on every entry. CRO must angle off or cover and still finish the technique.",
+  "Score-down restart: short rounds that start at 0-3. CRO's only goal in the first 5 s is to take the center back."
+ ],
+ "caveats": [
+  "Cohort is just 2 athletes (one bout, split into 3 clips), so percentiles and the gap are illustrative only.",
+  "Strike counts come from pose estimation on 360p video and are not yet checked against a human count. CRO's very high rate in clip 01 may include some guard and hand-fighting motion.",
+  "standing_pct / gap use bout points share as a placeholder definition."
+ ]
+}

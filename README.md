@@ -100,6 +100,10 @@ interface so a permissively-licensed alternative can be swapped in later.
 
 These clips may contain minors. `videos/`, `models/`, and all generated outputs
 are git-ignored. Nothing is ever uploaded — everything stays local.
+**Exception (team decision, 2026-11-12):** the public senior broadcast match FRA vs CRO
+(`kumite_0{1,2,3}_siroki_kadar`: raw clips, web videos, `data/v1/`, `data/roster.csv`) is
+force-added to git so teammates can work without the videos being sent around. Everything else
+keeps the rule.
 
 ## Athlete selection rework (round 2, following visual review of all 6 clips)
 
